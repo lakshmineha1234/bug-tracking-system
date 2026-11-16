@@ -1,0 +1,18 @@
+package com.bugtracker.repository;
+
+import com.bugtracker.entity.Project;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+
+import java.util.List;
+
+public interface ProjectRepository extends JpaRepository<Project, Long> {
+
+    List<Project> findAllByOrderByProjectNameAsc();
+
+    @Query("select p from Project p join p.members m where m.id = :userId order by p.projectName")
+    List<Project> findByMemberId(@Param("userId") Long userId);
+
+    boolean existsByProjectNameIgnoreCase(String projectName);
+}

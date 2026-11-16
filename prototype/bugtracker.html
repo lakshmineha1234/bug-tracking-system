@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BugTrack</title>
+<style>
+:root{
+  --bg:#f5f6f8;--surface:#fff;--surface2:#f0f2f5;--border:#e2e5ea;--text:#1d2330;--muted:#6b7385;
+  --accent:#4f46e5;--accent-weak:#eef0ff;--danger:#dc2626;--warn:#d97706;--ok:#16a34a;--info:#2563eb;
+  --shadow:0 1px 2px rgba(16,24,40,.06),0 1px 3px rgba(16,24,40,.08);--radius:10px;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0f1218;--surface:#171b23;--surface2:#1f2430;--border:#2a3140;--text:#e6e9ef;--muted:#9aa3b5;
+  --accent:#818cf8;--accent-weak:#23264a;--shadow:none;}}
+:root[data-theme="dark"]{--bg:#0f1218;--surface:#171b23;--surface2:#1f2430;--border:#2a3140;--text:#e6e9ef;--muted:#9aa3b5;
+  --accent:#818cf8;--accent-weak:#23264a;--shadow:none;}
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--text)}
+button,input,select,textarea{font:inherit;color:inherit}
+header{position:sticky;top:0;z-index:10;background:var(--surface);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:16px;padding:10px 20px;flex-wrap:wrap}
+.brand{font-weight:700;font-size:17px;display:flex;align-items:center;gap:8px}
+.brand span{background:var(--accent);color:#fff;border-radius:6px;padding:2px 7px;font-size:13px}
+nav{display:flex;gap:4px;flex-wrap:wrap}
+nav button{background:none;border:0;padding:7px 12px;border-radius:8px;cursor:pointer;color:var(--muted);font-weight:500}
+nav button.active{background:var(--accent-weak);color:var(--accent)}
+nav button:hover{color:var(--text)}
+.spacer{flex:1}
+.btn{border:1px solid var(--border);background:var(--surface);padding:7px 14px;border-radius:8px;cursor:pointer;font-weight:500}
+.btn:hover{background:var(--surface2)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.danger{color:var(--danger)}
+.btn.sm{padding:4px 10px;font-size:13px}
+main{max-width:1280px;margin:0 auto;padding:20px}
+h2{margin:0 0 16px;font-size:20px}
+h3{margin:0 0 12px;font-size:15px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px}
+.grid{display:grid;gap:16px}
+.stats{grid-template-columns:repeat(auto-fit,minmax(160px,1fr))}
+.stat .n{font-size:28px;font-weight:700}
+.stat .l{color:var(--muted);font-size:13px}
+.two{grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
+.bar-row{display:grid;grid-template-columns:110px 1fr 36px;align-items:center;gap:10px;margin:8px 0}
+.bar{height:10px;background:var(--surface2);border-radius:5px;overflow:hidden}
+.bar i{display:block;height:100%;border-radius:5px}
+.muted{color:var(--muted)}
+.pill{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.sev-Critical{background:#fde2e2;color:#b91c1c}.sev-High{background:#ffedd5;color:#c2410c}
+.sev-Medium{background:#fef9c3;color:#a16207}.sev-Low{background:#dcfce7;color:#15803d}
+.st-Open{background:#dbeafe;color:#1d4ed8}.st-InProgress{background:#ede9fe;color:#6d28d9}
+.st-Resolved{background:#dcfce7;color:#15803d}.st-Closed{background:#e5e7eb;color:#4b5563}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .pill{filter:saturate(.9) brightness(.9)}}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.toolbar input,.toolbar select,.field input,.field select,.field textarea{
+  background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 10px;min-width:0}
+.toolbar input[type=search]{flex:1;min-width:180px}
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;background:var(--surface)}
+th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--border);white-space:nowrap}
+th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);cursor:pointer;user-select:none}
+td.title{white-space:normal;min-width:220px;font-weight:500}
+tbody tr{cursor:pointer}tbody tr:hover{background:var(--surface2)}
+.board{display:grid;grid-template-columns:repeat(4,minmax(240px,1fr));gap:14px;overflow-x:auto;padding-bottom:8px}
+.col{background:var(--surface2);border-radius:var(--radius);padding:10px;min-height:300px}
+.col.over{outline:2px dashed var(--accent)}
+.col h3{display:flex;justify-content:space-between;font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+.ticket{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px;cursor:grab;box-shadow:var(--shadow)}
+.ticket .id{font-size:12px;color:var(--muted)}
+.ticket .t{font-weight:500;margin:2px 0 8px}
+.ticket .meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:12px}
+.avatar{display:inline-flex;width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;font-size:11px;
+  align-items:center;justify-content:center;font-weight:600;margin-left:auto}
+dialog{border:0;border-radius:14px;padding:0;background:var(--surface);color:var(--text);width:min(760px,calc(100vw - 32px));
+  max-height:calc(100vh - 40px);box-shadow:0 20px 60px rgba(0,0,0,.3)}
+dialog::backdrop{background:rgba(10,12,20,.5)}
+.dlg-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border)}
+.dlg-body{padding:20px;overflow:auto}
+.dlg-foot{display:flex;gap:8px;justify-content:flex-end;padding:14px 20px;border-top:1px solid var(--border)}
+.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.field{display:flex;flex-direction:column;gap:4px}
+.field.full{grid-column:1/-1}
+.field label{font-size:12px;font-weight:600;color:var(--muted)}
+.field textarea{min-height:90px;resize:vertical}
+.comments{margin-top:20px}
+.comment{border-left:3px solid var(--accent);padding:6px 10px;margin:8px 0;background:var(--surface2);border-radius:0 6px 6px 0}
+.comment .who{font-size:12px;color:var(--muted)}
+.history{font-size:12px;color:var(--muted);margin-top:16px}
+.history div{padding:3px 0}
+.list-item{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)}
+.empty{text-align:center;padding:40px;color:var(--muted)}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--text);color:var(--bg);
+  padding:10px 18px;border-radius:8px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:100}
+.toast.show{opacity:1}
+@media (max-width:640px){header{padding:10px 16px}main{padding:16px}.board{grid-template-columns:repeat(4,85vw)}}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><span>🐞</span>BugTrack</div>
+  <nav id="nav">
+    <button data-view="dashboard" class="active">Dashboard</button>
+    <button data-view="board">Board</button>
+    <button data-view="list">All Bugs</button>
+    <button data-view="settings">Settings</button>
+  </nav>
+  <div class="spacer"></div>
+  <select id="currentUser" class="btn sm" title="Acting as"></select>
+  <button class="btn primary" id="newBugBtn">+ New Bug</button>
+</header>
+<main id="app"></main>
+
+<dialog id="bugDlg">
+  <form method="dialog" id="bugForm">
+    <div class="dlg-head"><h3 id="dlgTitle" style="margin:0">New Bug</h3><button class="btn sm" value="cancel" formnovalidate>✕</button></div>
+    <div class="dlg-body">
+      <div class="form">
+        <div class="field full"><label>Title *</label><input name="title" required maxlength="140"></div>
+        <div class="field full"><label>Description / Steps to reproduce</label><textarea name="description"></textarea></div>
+        <div class="field"><label>Project</label><select name="project"></select></div>
+        <div class="field"><label>Status</label><select name="status"></select></div>
+        <div class="field"><label>Severity</label><select name="severity"></select></div>
+        <div class="field"><label>Priority</label><select name="priority"></select></div>
+        <div class="field"><label>Assignee</label><select name="assignee"></select></div>
+        <div class="field"><label>Due date</label><input type="date" name="due"></div>
+        <div class="field full"><label>Environment (browser, OS, version)</label><input name="environment"></div>
+      </div>
+      <div id="extra"></div>
+    </div>
+    <div class="dlg-foot">
+      <button type="button" class="btn danger" id="deleteBtn" style="margin-right:auto">Delete</button>
+      <button class="btn" value="cancel" formnovalidate>Cancel</button>
+      <button class="btn primary" value="save" id="saveBtn">Save</button>
+    </div>
+  </form>
+</dialog>
+<div class="toast" id="toast"></div>
+
+<script>
+const STATUSES=["Open","In Progress","Resolved","Closed"];
+const SEVERITIES=["Critical","High","Medium","Low"];
+const PRIORITIES=["P1","P2","P3","P4"];
+const SEV_COLOR={Critical:"#dc2626",High:"#ea580c",Medium:"#ca8a04",Low:"#16a34a"};
+const ST_COLOR={"Open":"#2563eb","In Progress":"#7c3aed","Resolved":"#16a34a","Closed":"#6b7280"};
+const KEY="bugtrack-data-v1";
+
+let state=load();
+let view="dashboard";
+let filters={q:"",status:"",severity:"",assignee:"",project:"",sort:"id",dir:-1};
+let editingId=null;
+
+function seed(){
+  const now=Date.now(),d=n=>new Date(now-n*864e5).toISOString();
+  const users=["Alice","Bob","Chen","Divya"];
+  const projects=["Web App","Mobile App","API"];
+  const raw=[
+    ["Login button unresponsive on Safari","Clicking Login does nothing on Safari 17.",'Web App',"Open","Critical","P1","Alice",1],
+    ["Crash when uploading large image","App crashes when image > 10MB.",'Mobile App',"In Progress","High","P1","Bob",3],
+    ["Typo on pricing page","'Anual' should be 'Annual'.",'Web App',"Resolved","Low","P4","Chen",6],
+    ["/users endpoint returns 500 for empty query","GET /users?q= returns 500 instead of [].",'API',"Open","High","P2","Divya",2],
+    ["Dark mode colors unreadable in settings","Contrast too low on settings labels.",'Mobile App',"Open","Medium","P3","",4],
+    ["Password reset email delayed","Emails arrive 10+ minutes late.",'API',"Closed","Medium","P2","Bob",12],
+    ["Pagination skips page 2","Next goes from page 1 to 3.",'Web App',"In Progress","Medium","P2","Alice",5],
+  ];
+  return {nextId:raw.length+1,users,projects,bugs:raw.map((r,i)=>({
+    id:i+1,title:r[0],description:r[1],project:r[2],status:r[3],severity:r[4],priority:r[5],assignee:r[6],
+    reporter:users[i%users.length],due:"",environment:"",created:d(r[7]),updated:d(Math.max(0,r[7]-1)),
+    comments:[],history:[{at:d(r[7]),by:users[i%users.length],text:"created this bug"}]}))};
+}
+function load(){try{const s=JSON.parse(localStorage.getItem(KEY));if(s&&s.bugs)return s;}catch(e){}return seed();}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}}
+const me=()=>document.getElementById("currentUser").value||"Anonymous";
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmt=iso=>iso?new Date(iso).toLocaleString(undefined,{dateStyle:"medium",timeStyle:"short"}):"";
+const ago=iso=>{const s=(Date.now()-new Date(iso))/1e3;if(s<60)return"just now";if(s<3600)return Math.floor(s/60)+"m ago";
+  if(s<86400)return Math.floor(s/3600)+"h ago";return Math.floor(s/86400)+"d ago";};
+const initials=n=>n?n.split(/\s+/).map(x=>x[0]).join("").slice(0,2).toUpperCase():"";
+const pill=(cls,v)=>`<span class="pill ${cls}-${String(v).replace(/\s/g,"")}">${esc(v)}</span>`;
+const opts=(arr,sel,blank)=>(blank!=null?`<option value="">${blank}</option>`:"")+arr.map(v=>`<option ${v===sel?"selected":""}>${esc(v)}</option>`).join("");
+function toast(msg){const t=document.getElementById("toast");t.textContent=msg;t.classList.add("show");clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove("show"),1800);}
+const overdue=b=>b.due&&!["Resolved","Closed"].includes(b.status)&&new Date(b.due+"T23:59")<new Date();
+
+/* ---------- Views ---------- */
+function render(){
+  document.querySelectorAll("#nav button").forEach(b=>b.classList.toggle("active",b.dataset.view===view));
+  const app=document.getElementById("app");
+  app.innerHTML={dashboard,board,list,settings}[view]();
+  if(view==="board")bindBoard();
+  if(view==="list")bindList();
+  if(view==="settings")bindSettings();
+  app.querySelectorAll("[data-open]").forEach(el=>el.addEventListener("click",()=>openBug(+el.dataset.open)));
+}
+
+function dashboard(){
+  const b=state.bugs,count=f=>b.filter(f).length;
+  const active=x=>!["Resolved","Closed"].includes(x.status);
+  const stats=[["Total bugs",b.length],["Open",count(x=>x.status==="Open")],["In progress",count(x=>x.status==="In Progress")],
+    ["Resolved / Closed",count(x=>!active(x))],["Critical (active)",count(x=>active(x)&&x.severity==="Critical")],["Overdue",count(overdue)]];
+  const bars=(keys,fn,colors)=>{const max=Math.max(1,...keys.map(fn));return keys.map(k=>`<div class="bar-row"><span>${esc(k||"Unassigned")}</span>
+    <div class="bar"><i style="width:${fn(k)/max*100}%;background:${colors?colors[k]:"var(--accent)"}"></i></div><b>${fn(k)}</b></div>`).join("");};
+  const recent=b.flatMap(x=>x.history.map(h=>({...h,bug:x}))).sort((a,c)=>c.at.localeCompare(a.at)).slice(0,8);
+  return `<h2>Dashboard</h2>
+  <div class="grid stats">${stats.map(([l,n])=>`<div class="card stat"><div class="n">${n}</div><div class="l">${l}</div></div>`).join("")}</div>
+  <div class="grid two" style="margin-top:16px">
+    <div class="card"><h3>By status</h3>${bars(STATUSES,s=>count(x=>x.status===s),ST_COLOR)}</div>
+    <div class="card"><h3>Active bugs by severity</h3>${bars(SEVERITIES,s=>count(x=>active(x)&&x.severity===s),SEV_COLOR)}</div>
+    <div class="card"><h3>Active bugs by assignee</h3>${bars([...state.users,""],u=>count(x=>active(x)&&x.assignee===u))}</div>
+    <div class="card"><h3>Recent activity</h3>${recent.length?recent.map(r=>`<div class="list-item" data-open="${r.bug.id}" style="cursor:pointer">
+      <span><b>${esc(r.by)}</b> ${esc(r.text)} on <b>#${r.bug.id}</b></span><span class="muted">${ago(r.at)}</span></div>`).join(""):`<div class="muted">No activity yet</div>`}</div>
+  </div>`;
+}
+
+function board(){
+  return `<h2>Board</h2><p class="muted" style="margin-top:-8px">Drag cards between columns to change status.</p>
+  <div class="board">${STATUSES.map(s=>{const items=state.bugs.filter(b=>b.status===s);
+    return `<div class="col" data-status="${s}"><h3><span>${s}</span><span>${items.length}</span></h3>
+    ${items.map(b=>`<div class="ticket" draggable="true" data-id="${b.id}" data-open="${b.id}">
+      <div class="id">#${b.id} · ${esc(b.project)}</div><div class="t">${esc(b.title)}</div>
+      <div class="meta">${pill("sev",b.severity)}<span class="pill" style="background:var(--surface2)">${b.priority}</span>
+      ${overdue(b)?'<span class="pill sev-Critical">Overdue</span>':""}
+      ${b.assignee?`<span class="avatar" title="${esc(b.assignee)}">${initials(b.assignee)}</span>`:""}</div></div>`).join("")}</div>`;}).join("")}</div>`;
+}
+function bindBoard(){
+  document.querySelectorAll(".ticket").forEach(t=>t.addEventListener("dragstart",e=>e.dataTransfer.setData("text/plain",t.dataset.id)));
+  document.querySelectorAll(".col").forEach(c=>{
+    c.addEventListener("dragover",e=>{e.preventDefault();c.classList.add("over");});
+    c.addEventListener("dragleave",()=>c.classList.remove("over"));
+    c.addEventListener("drop",e=>{e.preventDefault();c.classList.remove("over");
+      const b=state.bugs.find(x=>x.id==e.dataTransfer.getData("text/plain"));
+      if(b&&b.status!==c.dataset.status){log(b,`changed status ${b.status} → ${c.dataset.status}`);b.status=c.dataset.status;save();render();toast(`#${b.id} moved to ${b.status}`);}});
+  });
+}
+
+function filtered(){
+  const q=filters.q.toLowerCase();
+  const sevRank=s=>SEVERITIES.indexOf(s);
+  return state.bugs.filter(b=>(!q||`#${b.id} ${b.title} ${b.description}`.toLowerCase().includes(q))
+    &&(!filters.status||b.status===filters.status)&&(!filters.severity||b.severity===filters.severity)
+    &&(!filters.project||b.project===filters.project)
+    &&(!filters.assignee||(filters.assignee==="__none"?!b.assignee:b.assignee===filters.assignee)))
+  .sort((a,c)=>{const k=filters.sort;let x=a[k],y=c[k];if(k==="severity"){x=sevRank(x);y=sevRank(y);}
+    return (x>y?1:x<y?-1:0)*filters.dir;});
+}
+function list(){
+  const rows=filtered(),cols=[["id","ID"],["title","Title"],["project","Project"],["status","Status"],["severity","Severity"],
+    ["priority","Priority"],["assignee","Assignee"],["updated","Updated"]];
+  return `<h2>All Bugs</h2>
+  <div class="toolbar">
+    <input type="search" id="fq" placeholder="Search by ID, title, description…" value="${esc(filters.q)}">
+    <select id="fstatus">${opts(STATUSES,filters.status,"All statuses")}</select>
+    <select id="fseverity">${opts(SEVERITIES,filters.severity,"All severities")}</select>
+    <select id="fproject">${opts(state.projects,filters.project,"All projects")}</select>
+    <select id="fassignee"><option value="">All assignees</option><option value="__none" ${filters.assignee==="__none"?"selected":""}>Unassigned</option>${opts(state.users,filters.assignee)}</select>
+    <button class="btn" id="fclear">Clear</button><button class="btn" id="fcsv">Export CSV</button>
+  </div>
+  <div class="card table-wrap" style="padding:0">${rows.length?`<table><thead><tr>${cols.map(([k,l])=>`<th data-sort="${k}">${l}${filters.sort===k?(filters.dir>0?" ▲":" ▼"):""}</th>`).join("")}</tr></thead>
+  <tbody>${rows.map(b=>`<tr data-open="${b.id}"><td>#${b.id}</td><td class="title">${esc(b.title)}${overdue(b)?' <span class="pill sev-Critical">Overdue</span>':""}</td>
+  <td>${esc(b.project)}</td><td>${pill("st",b.status)}</td><td>${pill("sev",b.severity)}</td><td>${b.priority}</td>
+  <td>${esc(b.assignee)||'<span class="muted">—</span>'}</td><td class="muted">${ago(b.updated)}</td></tr>`).join("")}</tbody></table>`
+  :`<div class="empty">No bugs match these filters.</div>`}</div>
+  <p class="muted">${rows.length} of ${state.bugs.length} bugs</p>`;
+}
+function bindList(){
+  const q=document.getElementById("fq");
+  q.addEventListener("input",()=>{filters.q=q.value;const pos=q.selectionStart;render();const n=document.getElementById("fq");n.focus();n.setSelectionRange(pos,pos);});
+  ["status","severity","project","assignee"].forEach(k=>document.getElementById("f"+k).addEventListener("change",e=>{filters[k]=e.target.value;render();}));
+  document.getElementById("fclear").onclick=()=>{filters={...filters,q:"",status:"",severity:"",assignee:"",project:""};render();};
+  document.getElementById("fcsv").onclick=exportCSV;
+  document.querySelectorAll("th[data-sort]").forEach(th=>th.onclick=()=>{const k=th.dataset.sort;
+    filters.dir=filters.sort===k?-filters.dir:1;filters.sort=k;render();});
+}
+
+function settings(){
+  const sec=(title,key)=>`<div class="card"><h3>${title}</h3>
+    ${state[key].map((v,i)=>`<div class="list-item"><span>${esc(v)}</span><button class="btn sm danger" data-del="${key}:${i}">Remove</button></div>`).join("")}
+    <div class="toolbar" style="margin:12px 0 0"><input id="add-${key}" placeholder="Add…" style="flex:1"><button class="btn" data-add="${key}">Add</button></div></div>`;
+  return `<h2>Settings</h2><div class="grid two">${sec("Team members","users")}${sec("Projects","projects")}
+  <div class="card"><h3>Data</h3><p class="muted">Data is saved in this browser. Back it up or move it with export/import.</p>
+    <div class="toolbar"><button class="btn" id="exp">Export JSON</button><label class="btn">Import JSON<input type="file" id="imp" accept=".json" hidden></label>
+    <button class="btn danger" id="reset">Reset to sample data</button></div></div>
+  <div class="card"><h3>Appearance</h3><div class="toolbar"><select id="theme">${["system","light","dark"].map(t=>`<option ${localGet("bt-theme","system")===t?"selected":""}>${t}</option>`).join("")}</select></div></div></div>`;
+}
+function bindSettings(){
+  document.querySelectorAll("[data-add]").forEach(b=>b.onclick=()=>{const k=b.dataset.add,inp=document.getElementById("add-"+k),v=inp.value.trim();
+    if(!v)return;if(state[k].includes(v))return toast("Already exists");state[k].push(v);save();render();fillUsers();});
+  document.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>{const[k,i]=b.dataset.del.split(":");
+    if(state[k].length<=1)return toast("Keep at least one");state[k].splice(+i,1);save();render();fillUsers();});
+  document.getElementById("exp").onclick=()=>download("bugtrack-backup.json",JSON.stringify(state,null,2),"application/json");
+  document.getElementById("imp").onchange=e=>{const f=e.target.files[0];if(!f)return;f.text().then(t=>{try{const s=JSON.parse(t);
+    if(!Array.isArray(s.bugs))throw 0;state=s;save();fillUsers();render();toast("Imported");}catch{toast("Invalid file");}});};
+  document.getElementById("reset").onclick=()=>{if(confirm("Replace all data with sample data?")){state=seed();save();fillUsers();render();toast("Reset done");}};
+  document.getElementById("theme").onchange=e=>{localSet("bt-theme",e.target.value);applyTheme();};
+}
+
+/* ---------- Bug dialog ---------- */
+const dlg=document.getElementById("bugDlg"),form=document.getElementById("bugForm");
+function openBug(id){
+  editingId=id||null;
+  const b=id?state.bugs.find(x=>x.id===id):{title:"",description:"",project:state.projects[0],status:"Open",severity:"Medium",priority:"P3",assignee:"",due:"",environment:""};
+  document.getElementById("dlgTitle").textContent=id?`Bug #${id}`:"New Bug";
+  form.title.value=b.title;form.description.value=b.description;form.environment.value=b.environment||"";form.due.value=b.due||"";
+  form.project.innerHTML=opts(state.projects.includes(b.project)||!b.project?state.projects:[...state.projects,b.project],b.project);
+  form.status.innerHTML=opts(STATUSES,b.status);form.severity.innerHTML=opts(SEVERITIES,b.severity);form.priority.innerHTML=opts(PRIORITIES,b.priority);
+  const us=b.assignee&&!state.users.includes(b.assignee)?[...state.users,b.assignee]:state.users;
+  form.assignee.innerHTML=opts(us,b.assignee,"Unassigned");
+  document.getElementById("deleteBtn").style.display=id?"":"none";
+  document.getElementById("extra").innerHTML=id?`
+    <p class="muted" style="margin:14px 0 0">Reported by <b>${esc(b.reporter)}</b> · created ${fmt(b.created)} · updated ${fmt(b.updated)}</p>
+    <div class="comments"><h3>Comments (${b.comments.length})</h3>
+      ${b.comments.map(c=>`<div class="comment"><div class="who">${esc(c.by)} · ${fmt(c.at)}</div>${esc(c.text).replace(/\n/g,"<br>")}</div>`).join("")||'<p class="muted">No comments yet.</p>'}
+      <div class="field"><textarea id="newComment" placeholder="Add a comment…" style="min-height:60px"></textarea></div>
+      <button type="button" class="btn sm" id="addComment" style="margin-top:6px">Post comment</button></div>
+    <div class="history"><h3>History</h3>${b.history.slice().reverse().map(h=>`<div>${fmt(h.at)} — <b>${esc(h.by)}</b> ${esc(h.text)}</div>`).join("")}</div>`:"";
+  if(id)document.getElementById("addComment").onclick=()=>{const t=document.getElementById("newComment").value.trim();if(!t)return;
+    b.comments.push({by:me(),at:new Date().toISOString(),text:t});log(b,"commented");save();openBug(id);render();};
+  if(!dlg.open)dlg.showModal();
+}
+function log(b,text){const at=new Date().toISOString();b.history.push({at,by:me(),text});b.updated=at;}
+dlg.addEventListener("close",()=>{
+  if(dlg.returnValue!=="save")return;
+  const f=Object.fromEntries(["title","description","project","status","severity","priority","assignee","due","environment"].map(k=>[k,form[k].value.trim()]));
+  if(editingId){const b=state.bugs.find(x=>x.id===editingId);
+    const labels={title:"title",status:"status",severity:"severity",priority:"priority",assignee:"assignee",project:"project",due:"due date"};
+    for(const k in labels)if(b[k]!==f[k])log(b,`changed ${labels[k]} ${b[k]||"(none)"} → ${f[k]||"(none)"}`);
+    if(b.description!==f.description||b.environment!==f.environment)log(b,"edited details");
+    Object.assign(b,f);toast(`Bug #${b.id} saved`);
+  }else{const at=new Date().toISOString(),id=state.nextId++;
+    state.bugs.push({id,...f,reporter:me(),created:at,updated:at,comments:[],history:[{at,by:me(),text:"created this bug"}]});toast(`Bug #${id} created`);}
+  save();render();
+});
+document.getElementById("deleteBtn").onclick=()=>{if(confirm(`Delete bug #${editingId}? This cannot be undone.`)){
+  state.bugs=state.bugs.filter(b=>b.id!==editingId);save();dlg.close();render();toast("Deleted");}};
+
+/* ---------- Utilities ---------- */
+function exportCSV(){
+  const cols=["id","title","project","status","severity","priority","assignee","reporter","due","created","updated","description"];
+  const q=v=>`"${String(v??"").replace(/"/g,'""')}"`;
+  download("bugs.csv",[cols.join(","),...filtered().map(b=>cols.map(c=>q(b[c])).join(","))].join("\n"),"text/csv");
+}
+function download(name,text,type){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}
+function localGet(k,d){try{return localStorage.getItem(k)??d;}catch{return d;}}
+function localSet(k,v){try{localStorage.setItem(k,v);}catch{}}
+function applyTheme(){const t=localGet("bt-theme","system");if(t==="system")delete document.documentElement.dataset.theme;else document.documentElement.dataset.theme=t;}
+function fillUsers(){const s=document.getElementById("currentUser"),cur=localGet("bt-user",state.users[0]);
+  s.innerHTML=state.users.map(u=>`<option ${u===cur?"selected":""}>${esc(u)}</option>`).join("");}
+
+document.getElementById("nav").addEventListener("click",e=>{if(e.target.dataset.view){view=e.target.dataset.view;render();}});
+document.getElementById("newBugBtn").onclick=()=>openBug(null);
+document.getElementById("currentUser").onchange=e=>localSet("bt-user",e.target.value);
+applyTheme();fillUsers();render();
+</script>
+</body>
+</html>

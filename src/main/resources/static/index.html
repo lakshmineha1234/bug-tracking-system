@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BugTrack</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="signed-out">
+<header>
+  <div class="brand"><span>🐞</span>BugTrack</div>
+  <nav id="nav">
+    <button data-view="dashboard" class="active">Dashboard</button>
+    <button data-view="board">Board</button>
+    <button data-view="list">All Bugs</button>
+    <button data-view="projects">Projects</button>
+    <button data-view="users" class="admin-only">Users</button>
+  </nav>
+  <div class="spacer"></div>
+  <span id="userBadge" class="muted"></span>
+  <button class="btn sm" id="logoutBtn">Log out</button>
+  <button class="btn primary" id="newBugBtn">+ Report Bug</button>
+</header>
+<main id="app"></main>
+
+<dialog id="dlg"><div id="dlgContent"></div></dialog>
+<div class="toast" id="toast"></div>
+
+<script src="script.js"></script>
+</body>
+</html>
