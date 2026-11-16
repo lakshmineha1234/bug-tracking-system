@@ -33,7 +33,7 @@ Admins create projects and manage their members. Testers and developers see only
 ![Projects](docs/screenshots/projects.png)
 
 ### Dark mode
-The interface follows the operating system's light or dark setting automatically.
+The interface follows the operating system's light or dark setting by default. The sun/moon button in the header switches theme, and the choice is remembered in the browser.
 
 ![Board in dark mode](docs/screenshots/board-dark.png)
 
@@ -51,6 +51,7 @@ The interface follows the operating system's light or dark setting automatically
 - Comments on bugs
 - Dashboard: counts by status, priority, severity, project and assignee, plus recent activity
 - Search and filters (keyword, status, priority, severity, project, assignee), Kanban board, CSV export
+- Light and dark themes, with a toggle in the header
 
 ## User roles
 

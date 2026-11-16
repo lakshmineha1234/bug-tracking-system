@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>BugTrack</title>
+<script>
+  // Apply the saved theme before the page renders to avoid a flash of the wrong colours.
+  try { var t = localStorage.getItem("bugtrack-theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
 <link rel="stylesheet" href="style.css">
 </head>
 <body class="signed-out">
@@ -17,6 +21,7 @@
     <button data-view="users" class="admin-only">Users</button>
   </nav>
   <div class="spacer"></div>
+  <button type="button" class="btn theme-toggle" id="themeToggle"></button>
   <span id="userBadge" class="muted"></span>
   <button class="btn sm" id="logoutBtn">Log out</button>
   <button class="btn primary" id="newBugBtn">+ Report Bug</button>

@@ -557,6 +557,35 @@ async function openBug(id) {
   };
 }
 
+/* ---------- Theme ---------- */
+// Follows the system setting until the user picks a theme; the choice is remembered in this browser.
+const THEME_KEY = "bugtrack-theme";
+const systemDark = window.matchMedia("(prefers-color-scheme: dark)");
+const SUN = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>`;
+const MOON = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>`;
+
+function isDarkTheme() {
+  const chosen = document.documentElement.dataset.theme;
+  return chosen ? chosen === "dark" : systemDark.matches;
+}
+
+function updateThemeButton() {
+  const btn = $("themeToggle");
+  const dark = isDarkTheme();
+  btn.innerHTML = dark ? SUN : MOON;
+  btn.title = dark ? "Switch to light mode" : "Switch to dark mode";
+  btn.setAttribute("aria-label", btn.title);
+}
+
+$("themeToggle").onclick = () => {
+  const next = isDarkTheme() ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem(THEME_KEY, next); } catch { /* storage unavailable: applies to this visit only */ }
+  updateThemeButton();
+};
+systemDark.addEventListener("change", updateThemeButton);
+updateThemeButton();
+
 /* ---------- Startup ---------- */
 $("nav").addEventListener("click", e => {
   if (e.target.dataset.view) { view = e.target.dataset.view; render(); }
