@@ -3,6 +3,38 @@
 A web application for software teams to report, assign, track and resolve bugs.
 Testers report defects, admins manage projects and assignments, and developers work on the bugs assigned to them.
 
+![Dashboard](docs/screenshots/dashboard.png)
+
+## Screenshots
+
+### Board
+Bugs grouped by status. Cards can be dragged to another column, but only moves the user's role allows are accepted.
+
+![Kanban board](docs/screenshots/board.png)
+
+### All bugs
+Search by ID, title or description, and filter by status, priority, severity, project and assignee. Columns are sortable and the list can be exported to CSV.
+
+![Bug list with filters](docs/screenshots/bug-list.png)
+
+### Bug details
+Each report records the description, steps to reproduce, expected result and actual result, with priority and severity as separate fields.
+
+![Bug details](docs/screenshots/bug-details.png)
+
+### Workflow, comments and history
+The status buttons shown depend on the user's role and the bug's current status. Admins assign the bug to a developer in the project. Every status change is recorded.
+
+![Status, assignment, comments and history](docs/screenshots/bug-workflow.png)
+
+### Projects
+Admins create projects and manage their members. Testers and developers see only the projects they belong to.
+
+![Projects](docs/screenshots/projects.png)
+
+### Sign in
+![Sign-in page](docs/screenshots/login.png)
+
 ## Features
 
 - Registration and login with BCrypt-hashed passwords and session-based authentication
