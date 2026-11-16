@@ -25,6 +25,7 @@ import com.bugtracker.repository.CommentRepository;
 import com.bugtracker.repository.ProjectRepository;
 import com.bugtracker.repository.UserRepository;
 import com.bugtracker.security.CurrentUserService;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,15 +42,18 @@ public class BugService {
     private final CommentRepository comments;
     private final BugHistoryRepository history;
     private final CurrentUserService currentUser;
+    private final ApplicationEventPublisher events;
 
     public BugService(BugRepository bugs, ProjectRepository projects, UserRepository users,
-                      CommentRepository comments, BugHistoryRepository history, CurrentUserService currentUser) {
+                      CommentRepository comments, BugHistoryRepository history, CurrentUserService currentUser,
+                      ApplicationEventPublisher events) {
         this.bugs = bugs;
         this.projects = projects;
         this.users = users;
         this.comments = comments;
         this.history = history;
         this.currentUser = currentUser;
+        this.events = events;
     }
 
     @Transactional(readOnly = true)
@@ -152,7 +156,11 @@ public class BugService {
                 throw new BadRequestException(developer.getName() + " is not a member of project "
                         + bug.getProject().getProjectName());
             }
+            boolean newAssignee = !BugPermissions.isAssignee(developer, bug);
             bug.setAssignedTo(developer);
+            if (newAssignee) {
+                events.publishEvent(new BugAssignedEvent(bug.getId(), developer.getId(), me.getId()));
+            }
         }
         bug.touch();
         return toResponse(bug, me);

@@ -6,6 +6,7 @@ import com.bugtracker.entity.User;
 import com.bugtracker.repository.ProjectRepository;
 import com.bugtracker.repository.UserRepository;
 import com.bugtracker.security.AppUserDetails;
+import com.bugtracker.service.BugAssignedEvent;
 import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -14,10 +15,13 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors;
+import org.springframework.test.context.event.ApplicationEvents;
+import org.springframework.test.context.event.RecordApplicationEvents;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.transaction.annotation.Transactional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
@@ -32,10 +36,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
+@RecordApplicationEvents
 class BugApiIntegrationTest {
 
     @Autowired
     private MockMvc mvc;
+    @Autowired
+    private ApplicationEvents applicationEvents;
     @Autowired
     private UserRepository users;
     @Autowired
@@ -177,6 +184,16 @@ class BugApiIntegrationTest {
         mvc.perform(patch("/api/bugs/" + bugId + "/assignment").with(as(admin)).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON).content("{\"assigneeId\":" + otherDeveloper.getId() + "}"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void assigningNotifiesTheDeveloperOnce() throws Exception {
+        long bugId = createBug("Slow search", "MEDIUM", "MAJOR");
+        assign(bugId, developer.getId());
+        assign(bugId, developer.getId()); // saving the same assignment again sends nothing new
+
+        assertThat(applicationEvents.stream(BugAssignedEvent.class))
+                .containsExactly(new BugAssignedEvent(bugId, developer.getId(), admin.getId()));
     }
 
     @Test

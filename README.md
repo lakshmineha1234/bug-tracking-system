@@ -51,6 +51,7 @@ The interface follows the operating system's light or dark setting by default. T
 - Comments on bugs
 - Dashboard: counts by status, priority, severity, project and assignee, plus recent activity
 - Search and filters (keyword, status, priority, severity, project, assignee), Kanban board, CSV export
+- Email notification to a developer when a bug is assigned to them, with a link that opens the bug
 - Light and dark themes, with a toggle in the header
 
 ## User roles
@@ -105,6 +106,35 @@ Settings are read from environment variables, so no secrets are stored in the co
 | `BUGTRACK_ADMIN_EMAIL` | *(none)* | Email of the first admin, created if no admin exists |
 | `BUGTRACK_ADMIN_PASSWORD` | *(none)* | Password of the first admin (at least 8 characters) |
 | `BUGTRACK_ADMIN_NAME` | `Administrator` | Display name of the first admin |
+| `MAIL_ENABLED` | `false` | Send email notifications. When `false`, emails are written to the log instead |
+| `MAIL_HOST` / `MAIL_PORT` | `localhost` / `587` | SMTP server |
+| `MAIL_USERNAME` / `MAIL_PASSWORD` | *(empty)* | SMTP login |
+| `MAIL_SMTP_AUTH` / `MAIL_STARTTLS` | `false` / `false` | Set both to `true` for most hosted mail services |
+| `MAIL_FROM` | `BugTrack <no-reply@bugtrack.local>` | Sender address |
+| `APP_BASE_URL` | `http://localhost:8080` | Address used for links in emails |
+
+### Email notifications
+
+When an admin assigns a bug to a developer (or reassigns it to a different developer), that developer receives an email with the bug's details and a link such as `http://localhost:8080/#bug-8`, which opens the bug after signing in. Emails are sent in the background after the assignment is saved; if the mail server is unreachable the assignment still succeeds and the failure is logged.
+
+Example for Gmail (create an [app password](https://support.google.com/accounts/answer/185833) first), in `application-local.properties`:
+
+```properties
+app.mail.enabled=true
+spring.mail.host=smtp.gmail.com
+spring.mail.port=587
+spring.mail.username=your.address@gmail.com
+spring.mail.password=your-app-password
+spring.mail.properties.mail.smtp.auth=true
+spring.mail.properties.mail.smtp.starttls.enable=true
+app.mail.from=BugTrack <your.address@gmail.com>
+```
+
+To try it without a real mail account, run Python's test mail server (Python 3.11 or earlier), which prints every email it receives, and point the app at it with `spring.mail.host=127.0.0.1`, `spring.mail.port=1025` and `app.mail.enabled=true`:
+
+```
+python -m smtpd -n -c DebuggingServer 127.0.0.1:1025
+```
 
 ## Running
 

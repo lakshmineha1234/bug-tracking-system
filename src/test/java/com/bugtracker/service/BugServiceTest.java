@@ -26,6 +26,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.util.Optional;
 
@@ -45,6 +46,7 @@ class BugServiceTest {
     @Mock private CommentRepository comments;
     @Mock private BugHistoryRepository history;
     @Mock private CurrentUserService currentUser;
+    @Mock private ApplicationEventPublisher events;
     @InjectMocks private BugService service;
 
     private User admin;
@@ -125,6 +127,31 @@ class BugServiceTest {
         service.assign(10L, new AssignmentRequest(3L));
 
         assertThat(bug.getAssignedTo()).isSameAs(developer);
+        verify(events).publishEvent(new BugAssignedEvent(bug.getId(), 3L, 1L));
+    }
+
+    @Test
+    void reassigningToSameDeveloperDoesNotNotifyAgain() {
+        bug.setAssignedTo(developer);
+        when(currentUser.get()).thenReturn(admin);
+        when(bugs.findById(10L)).thenReturn(Optional.of(bug));
+        when(users.findById(3L)).thenReturn(Optional.of(developer));
+
+        service.assign(10L, new AssignmentRequest(3L));
+
+        verify(events, never()).publishEvent(any());
+    }
+
+    @Test
+    void unassigningDoesNotNotify() {
+        bug.setAssignedTo(developer);
+        when(currentUser.get()).thenReturn(admin);
+        when(bugs.findById(10L)).thenReturn(Optional.of(bug));
+
+        service.assign(10L, new AssignmentRequest(null));
+
+        assertThat(bug.getAssignedTo()).isNull();
+        verify(events, never()).publishEvent(any());
     }
 
     @Test

@@ -140,7 +140,15 @@ async function enterApp() {
   await refreshReferenceData();
   view = "dashboard";
   render();
+  openBugFromLink();
 }
+
+/* Links such as /#bug-8 (used in notification emails) open that bug, after signing in if needed. */
+function openBugFromLink() {
+  const m = location.hash.match(/^#bug-(\d+)$/);
+  if (m && me) openBug(Number(m[1]));
+}
+window.addEventListener("hashchange", openBugFromLink);
 
 async function refreshReferenceData() {
   projects = await api("GET", "/api/projects");
@@ -591,6 +599,10 @@ $("nav").addEventListener("click", e => {
   if (e.target.dataset.view) { view = e.target.dataset.view; render(); }
 });
 $("newBugBtn").onclick = () => openBug(null);
+// Drop a #bug-N link from the address once its dialog is closed, so reloading doesn't reopen it.
+$("dlg").addEventListener("close", () => {
+  if (/^#bug-\d+$/.test(location.hash)) history.replaceState(null, "", location.pathname + location.search);
+});
 $("logoutBtn").onclick = async () => {
   try { await api("POST", "/api/auth/logout"); } catch { /* session may already be gone */ }
   me = null;
