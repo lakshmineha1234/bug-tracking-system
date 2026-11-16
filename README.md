@@ -32,6 +32,11 @@ Admins create projects and manage their members. Testers and developers see only
 
 ![Projects](docs/screenshots/projects.png)
 
+### Dark mode
+The interface follows the operating system's light or dark setting automatically.
+
+![Board in dark mode](docs/screenshots/board-dark.png)
+
 ### Sign in
 ![Sign-in page](docs/screenshots/login.png)
 
