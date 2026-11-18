@@ -80,7 +80,7 @@ Admins may perform any of these transitions. Every transition is recorded in `bu
 
 ## Technology stack
 
-Java 17+, Spring Boot 3.3 (Web, Data JPA, Security, Validation), MySQL 8, HTML/CSS/JavaScript, Maven, JUnit 5, Mockito, Spring Boot Test (H2 for tests).
+Java 17+, Spring Boot 3.5 (Web, Data JPA, Security, Validation, Mail), Flyway, MySQL 8, HTML/CSS/JavaScript, Maven, JUnit 5, Mockito, Spring Boot Test (H2 for tests).
 
 ## Prerequisites
 
@@ -224,6 +224,5 @@ bug-tracking-system/
 
 ## Known limitations and future improvements
 
-- The Flyway version managed by Spring Boot 3.3 logs a warning that it has been tested only up to MySQL 8.1. It works with MySQL 8.4 (verified), and upgrading Spring Boot will bring a newer Flyway.
 - No CORS configuration is needed because the backend serves the frontend from the same origin. If the frontend is ever hosted separately, allow only that origin.
 - Not yet implemented: file attachments, email notifications, sprints/releases, PDF reports, GitHub integration, pagination of bug lists.
