@@ -49,7 +49,7 @@ The interface follows the operating system's light or dark setting by default. T
 - Projects with members; testers see their projects' bugs, developers see bugs assigned to them
 - Bug reports with description, steps to reproduce, expected and actual results, priority and severity
 - Assignment to developers who are members of the bug's project
-- Controlled status workflow with a recorded history of every status change
+- Controlled status workflow, with a history of every status change and every assignment change
 - Comments on bugs
 - Dashboard: counts by status, priority, severity, project and assignee, plus recent activity
 - Search and filters (keyword, status, priority, severity, project, assignee), Kanban board, CSV export
@@ -76,7 +76,7 @@ New users register as Tester or Developer. Admin accounts cannot be self-registe
 | FIXED | IN_PROGRESS | Tester (fix failed retest, returned to developer) |
 | CLOSED | OPEN | Tester (reopen) |
 
-Admins may perform any of these transitions. Every transition is recorded in `bug_history`.
+Admins may perform any of these transitions. Every transition is recorded in `bug_history`, and every change of assignee (assigned, reassigned or unassigned) in `assignment_history`. The bug details show both as one timeline.
 
 ## Technology stack
 
@@ -94,7 +94,9 @@ Java 17+, Spring Boot 3.3 (Web, Data JPA, Security, Validation), MySQL 8, HTML/C
 CREATE DATABASE bug_tracking_db;
 ```
 
-Tables (`users`, `projects`, `project_members`, `bugs`, `comments`, `bug_history`) are created automatically on first start.
+The tables (`users`, `projects`, `project_members`, `bugs`, `comments`, `bug_history`, `assignment_history`) are created on first start by [Flyway](https://documentation.red-gate.com/flyway) migrations in `src/main/resources/db/migration`. Flyway records what it has applied in `flyway_schema_history`, and Hibernate only checks that the tables match the entities (`ddl-auto=validate`).
+
+To change the schema, add a new file such as `V3__add_attachments.sql`; never edit a migration that has already been applied. A database created before migrations were introduced is detected automatically, marked as version 1, and then upgraded.
 
 ## Configuration
 
@@ -182,6 +184,7 @@ Suggested first steps: create a project, have a tester and a developer register,
 | PATCH | `/api/bugs/{id}/assignment` | Assign or unassign (admin) |
 | GET / POST | `/api/bugs/{id}/comments` | List / add comments |
 | GET | `/api/bugs/{id}/history` | Status history |
+| GET | `/api/bugs/{id}/assignments` | Assignment history (assigned, reassigned, unassigned) |
 | GET | `/api/dashboard/summary` | Dashboard statistics |
 
 Errors are returned as JSON: `{timestamp, status, error, message, fieldErrors}`.
@@ -214,12 +217,13 @@ bug-tracking-system/
     │   └── service/       Business logic, permissions, workflow
     ├── main/resources/
     │   ├── application.properties
+    │   ├── db/migration/  Flyway migrations (V1__initial_schema.sql, V2__assignment_history.sql)
     │   └── static/        index.html, style.css, script.js
     └── test/              Unit and integration tests
 ```
 
 ## Known limitations and future improvements
 
-- The schema is managed by Hibernate (`ddl-auto=update`). Switch to Flyway or Liquibase migrations before production.
+- The Flyway version managed by Spring Boot 3.3 logs a warning that it has been tested only up to MySQL 8.1. It works with MySQL 8.4 (verified), and upgrading Spring Boot will bring a newer Flyway.
 - No CORS configuration is needed because the backend serves the frontend from the same origin. If the frontend is ever hosted separately, allow only that origin.
 - Not yet implemented: file attachments, email notifications, sprints/releases, PDF reports, GitHub integration, pagination of bug lists.

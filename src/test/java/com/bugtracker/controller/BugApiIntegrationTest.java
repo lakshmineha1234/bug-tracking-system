@@ -24,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -194,6 +195,42 @@ class BugApiIntegrationTest {
 
         assertThat(applicationEvents.stream(BugAssignedEvent.class))
                 .containsExactly(new BugAssignedEvent(bugId, developer.getId(), admin.getId()));
+    }
+
+    @Test
+    void assignmentChangesAreRecordedInHistory() throws Exception {
+        project.addMember(otherDeveloper);
+        long bugId = createBug("Broken export", "HIGH", "MAJOR");
+        assign(bugId, developer.getId());
+        assign(bugId, developer.getId());      // no change: not recorded
+        assign(bugId, otherDeveloper.getId()); // reassigned
+        mvc.perform(patch("/api/bugs/" + bugId + "/assignment").with(as(admin)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"assigneeId\":null}"))
+                .andExpect(status().isOk());
+
+        mvc.perform(get("/api/bugs/" + bugId + "/assignments").with(as(tester)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(3)))
+                .andExpect(jsonPath("$[0].oldAssignee").value(nullValue()))
+                .andExpect(jsonPath("$[0].newAssignee.name").value("Dev One"))
+                .andExpect(jsonPath("$[0].changedBy.name").value("Admin"))
+                .andExpect(jsonPath("$[1].oldAssignee.name").value("Dev One"))
+                .andExpect(jsonPath("$[1].newAssignee.name").value("Dev Two"))
+                .andExpect(jsonPath("$[2].oldAssignee.name").value("Dev Two"))
+                .andExpect(jsonPath("$[2].newAssignee").value(nullValue()));
+
+        mvc.perform(get("/api/dashboard/summary").with(as(admin)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.recentAssignments", hasSize(3)));
+    }
+
+    @Test
+    void assignmentHistoryRequiresAccessToTheBug() throws Exception {
+        long bugId = createBug("Private bug", "LOW", "MINOR");
+        mvc.perform(get("/api/bugs/" + bugId + "/assignments").with(as(otherDeveloper)))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/api/bugs/999999/assignments").with(as(admin)))
+                .andExpect(status().isNotFound());
     }
 
     @Test

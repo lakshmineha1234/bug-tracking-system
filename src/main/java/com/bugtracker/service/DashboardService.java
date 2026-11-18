@@ -1,5 +1,6 @@
 package com.bugtracker.service;
 
+import com.bugtracker.dto.AssignmentHistoryResponse;
 import com.bugtracker.dto.DashboardSummary;
 import com.bugtracker.dto.HistoryResponse;
 import com.bugtracker.entity.Bug;
@@ -7,6 +8,7 @@ import com.bugtracker.entity.BugStatus;
 import com.bugtracker.entity.Priority;
 import com.bugtracker.entity.Severity;
 import com.bugtracker.entity.User;
+import com.bugtracker.repository.AssignmentHistoryRepository;
 import com.bugtracker.repository.BugHistoryRepository;
 import com.bugtracker.repository.BugRepository;
 import com.bugtracker.security.CurrentUserService;
@@ -26,11 +28,14 @@ public class DashboardService {
 
     private final BugRepository bugs;
     private final BugHistoryRepository history;
+    private final AssignmentHistoryRepository assignmentHistory;
     private final CurrentUserService currentUser;
 
-    public DashboardService(BugRepository bugs, BugHistoryRepository history, CurrentUserService currentUser) {
+    public DashboardService(BugRepository bugs, BugHistoryRepository history,
+                            AssignmentHistoryRepository assignmentHistory, CurrentUserService currentUser) {
         this.bugs = bugs;
         this.history = history;
+        this.assignmentHistory = assignmentHistory;
         this.currentUser = currentUser;
     }
 
@@ -52,16 +57,20 @@ public class DashboardService {
             byAssignee.merge(assignee, 1L, Long::sum);
         }
 
-        List<HistoryResponse> recent = visible.isEmpty()
+        List<Long> ids = visible.stream().map(Bug::getId).toList();
+        List<HistoryResponse> recent = ids.isEmpty()
                 ? List.of()
-                : history.findTop10ByBugIdInOrderByIdDesc(visible.stream().map(Bug::getId).toList())
-                        .stream().map(HistoryResponse::from).toList();
+                : history.findTop10ByBugIdInOrderByIdDesc(ids).stream().map(HistoryResponse::from).toList();
+        List<AssignmentHistoryResponse> recentAssignments = ids.isEmpty()
+                ? List.of()
+                : assignmentHistory.findTop10ByBugIdInOrderByIdDesc(ids).stream()
+                        .map(AssignmentHistoryResponse::from).toList();
 
         return new DashboardSummary(visible.size(), active, criticalActive,
                 countByEnum(BugStatus.values(), visible, Bug::getStatus),
                 countByEnum(Priority.values(), visible, Bug::getPriority),
                 countByEnum(Severity.values(), visible, Bug::getSeverity),
-                byProject, byAssignee, recent);
+                byProject, byAssignee, recent, recentAssignments);
     }
 
     private static boolean isActive(Bug b) {

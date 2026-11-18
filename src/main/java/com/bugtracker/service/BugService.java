@@ -1,5 +1,6 @@
 package com.bugtracker.service;
 
+import com.bugtracker.dto.AssignmentHistoryResponse;
 import com.bugtracker.dto.AssignmentRequest;
 import com.bugtracker.dto.BugFilter;
 import com.bugtracker.dto.BugResponse;
@@ -9,6 +10,7 @@ import com.bugtracker.dto.CreateBugRequest;
 import com.bugtracker.dto.HistoryResponse;
 import com.bugtracker.dto.StatusChangeRequest;
 import com.bugtracker.dto.UpdateBugRequest;
+import com.bugtracker.entity.AssignmentHistory;
 import com.bugtracker.entity.Bug;
 import com.bugtracker.entity.BugHistory;
 import com.bugtracker.entity.BugStatus;
@@ -19,6 +21,7 @@ import com.bugtracker.entity.User;
 import com.bugtracker.exception.BadRequestException;
 import com.bugtracker.exception.ForbiddenException;
 import com.bugtracker.exception.NotFoundException;
+import com.bugtracker.repository.AssignmentHistoryRepository;
 import com.bugtracker.repository.BugHistoryRepository;
 import com.bugtracker.repository.BugRepository;
 import com.bugtracker.repository.CommentRepository;
@@ -41,17 +44,20 @@ public class BugService {
     private final UserRepository users;
     private final CommentRepository comments;
     private final BugHistoryRepository history;
+    private final AssignmentHistoryRepository assignmentHistory;
     private final CurrentUserService currentUser;
     private final ApplicationEventPublisher events;
 
     public BugService(BugRepository bugs, ProjectRepository projects, UserRepository users,
-                      CommentRepository comments, BugHistoryRepository history, CurrentUserService currentUser,
+                      CommentRepository comments, BugHistoryRepository history,
+                      AssignmentHistoryRepository assignmentHistory, CurrentUserService currentUser,
                       ApplicationEventPublisher events) {
         this.bugs = bugs;
         this.projects = projects;
         this.users = users;
         this.comments = comments;
         this.history = history;
+        this.assignmentHistory = assignmentHistory;
         this.currentUser = currentUser;
         this.events = events;
     }
@@ -141,10 +147,10 @@ public class BugService {
             throw new ForbiddenException("Only admins can assign bugs");
         }
         Bug bug = bugs.findById(id).orElseThrow(() -> new NotFoundException("Bug " + id + " not found"));
-        if (req.assigneeId() == null) {
-            bug.setAssignedTo(null);
-        } else {
-            User developer = users.findById(req.assigneeId())
+        User previous = bug.getAssignedTo();
+        User developer = null;
+        if (req.assigneeId() != null) {
+            developer = users.findById(req.assigneeId())
                     .orElseThrow(() -> new NotFoundException("User " + req.assigneeId() + " not found"));
             if (developer.getRole() != Role.DEVELOPER) {
                 throw new BadRequestException("Bugs can only be assigned to developers");
@@ -156,13 +162,18 @@ public class BugService {
                 throw new BadRequestException(developer.getName() + " is not a member of project "
                         + bug.getProject().getProjectName());
             }
-            boolean newAssignee = !BugPermissions.isAssignee(developer, bug);
+        }
+        boolean changed = previous == null
+                ? developer != null
+                : developer == null || !previous.getId().equals(developer.getId());
+        if (changed) {
             bug.setAssignedTo(developer);
-            if (newAssignee) {
+            bug.touch();
+            assignmentHistory.save(new AssignmentHistory(bug, me, previous, developer));
+            if (developer != null) {
                 events.publishEvent(new BugAssignedEvent(bug.getId(), developer.getId(), me.getId()));
             }
         }
-        bug.touch();
         return toResponse(bug, me);
     }
 
@@ -183,6 +194,12 @@ public class BugService {
     public List<HistoryResponse> history(Long bugId) {
         findVisible(bugId, currentUser.get());
         return history.findByBugIdOrderByIdAsc(bugId).stream().map(HistoryResponse::from).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<AssignmentHistoryResponse> assignmentHistory(Long bugId) {
+        findVisible(bugId, currentUser.get());
+        return assignmentHistory.findByBugIdOrderByIdAsc(bugId).stream().map(AssignmentHistoryResponse::from).toList();
     }
 
     /** 404 if the bug does not exist, 403 if it exists but the user may not see it. */

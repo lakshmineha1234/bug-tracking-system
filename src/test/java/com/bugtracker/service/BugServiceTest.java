@@ -13,6 +13,8 @@ import com.bugtracker.entity.User;
 import com.bugtracker.exception.BadRequestException;
 import com.bugtracker.exception.ForbiddenException;
 import com.bugtracker.exception.NotFoundException;
+import com.bugtracker.entity.AssignmentHistory;
+import com.bugtracker.repository.AssignmentHistoryRepository;
 import com.bugtracker.repository.BugHistoryRepository;
 import com.bugtracker.repository.BugRepository;
 import com.bugtracker.repository.CommentRepository;
@@ -45,6 +47,7 @@ class BugServiceTest {
     @Mock private UserRepository users;
     @Mock private CommentRepository comments;
     @Mock private BugHistoryRepository history;
+    @Mock private AssignmentHistoryRepository assignmentHistory;
     @Mock private CurrentUserService currentUser;
     @Mock private ApplicationEventPublisher events;
     @InjectMocks private BugService service;
@@ -128,10 +131,14 @@ class BugServiceTest {
 
         assertThat(bug.getAssignedTo()).isSameAs(developer);
         verify(events).publishEvent(new BugAssignedEvent(bug.getId(), 3L, 1L));
+        AssignmentHistory recorded = savedAssignment();
+        assertThat(recorded.getChangedBy()).isSameAs(admin);
+        assertThat(recorded.getOldAssignee()).isNull();
+        assertThat(recorded.getNewAssignee()).isSameAs(developer);
     }
 
     @Test
-    void reassigningToSameDeveloperDoesNotNotifyAgain() {
+    void reassigningToSameDeveloperChangesNothing() {
         bug.setAssignedTo(developer);
         when(currentUser.get()).thenReturn(admin);
         when(bugs.findById(10L)).thenReturn(Optional.of(bug));
@@ -140,10 +147,28 @@ class BugServiceTest {
         service.assign(10L, new AssignmentRequest(3L));
 
         verify(events, never()).publishEvent(any());
+        verify(assignmentHistory, never()).save(any());
     }
 
     @Test
-    void unassigningDoesNotNotify() {
+    void reassigningToAnotherDeveloperRecordsBoth() {
+        User otherDeveloper = user(4L, Role.DEVELOPER);
+        bug.getProject().addMember(otherDeveloper);
+        bug.setAssignedTo(developer);
+        when(currentUser.get()).thenReturn(admin);
+        when(bugs.findById(10L)).thenReturn(Optional.of(bug));
+        when(users.findById(4L)).thenReturn(Optional.of(otherDeveloper));
+
+        service.assign(10L, new AssignmentRequest(4L));
+
+        AssignmentHistory recorded = savedAssignment();
+        assertThat(recorded.getOldAssignee()).isSameAs(developer);
+        assertThat(recorded.getNewAssignee()).isSameAs(otherDeveloper);
+        verify(events).publishEvent(new BugAssignedEvent(bug.getId(), 4L, 1L));
+    }
+
+    @Test
+    void unassigningIsRecordedButNotNotified() {
         bug.setAssignedTo(developer);
         when(currentUser.get()).thenReturn(admin);
         when(bugs.findById(10L)).thenReturn(Optional.of(bug));
@@ -152,6 +177,15 @@ class BugServiceTest {
 
         assertThat(bug.getAssignedTo()).isNull();
         verify(events, never()).publishEvent(any());
+        AssignmentHistory recorded = savedAssignment();
+        assertThat(recorded.getOldAssignee()).isSameAs(developer);
+        assertThat(recorded.getNewAssignee()).isNull();
+    }
+
+    private AssignmentHistory savedAssignment() {
+        ArgumentCaptor<AssignmentHistory> saved = ArgumentCaptor.forClass(AssignmentHistory.class);
+        verify(assignmentHistory).save(saved.capture());
+        return saved.getValue();
     }
 
     @Test

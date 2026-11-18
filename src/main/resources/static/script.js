@@ -192,12 +192,11 @@ async function dashboardView() {
     ["Total bugs", s.total], ["Open", s.byStatus.OPEN], ["In progress", s.byStatus.IN_PROGRESS],
     ["Fixed, awaiting test", s.byStatus.FIXED], ["Closed", s.byStatus.CLOSED], ["Critical priority (not closed)", s.criticalActive]
   ];
-  const activity = s.recentActivity.length ? s.recentActivity.map(h => `
-    <div class="list-item" data-open="${h.bugId}" style="cursor:pointer">
-      <span><b>${esc(h.changedBy.name)}</b> ${h.oldStatus
-        ? `moved <b>#${h.bugId}</b> ${esc(label(h.oldStatus))} → ${esc(label(h.newStatus))}`
-        : `reported <b>#${h.bugId}</b> ${esc(h.bugTitle)}`}</span>
-      <span class="muted">${ago(h.changedAt)}</span></div>`).join("") : `<div class="muted">No activity yet</div>`;
+  const events = timeline(s.recentActivity, s.recentAssignments, true).slice(0, 10);
+  const activity = events.length ? events.map(e => `
+    <div class="list-item" data-open="${e.bugId}" style="cursor:pointer">
+      <span><b>${esc(e.by)}</b> ${e.html}</span>
+      <span class="muted">${ago(e.at)}</span></div>`).join("") : `<div class="muted">No activity yet</div>`;
   return `<h2>Dashboard</h2>
   <div class="grid stats">${stats.map(([l, n]) => `<div class="card stat"><div class="n">${n}</div><div class="l">${l}</div></div>`).join("")}</div>
   <div class="grid two" style="margin-top:16px">
@@ -460,13 +459,35 @@ function bindUsers() {
   document.querySelectorAll("[data-enabled]").forEach(c => c.onchange = () => update(c.dataset.enabled, { enabled: c.checked }));
 }
 
+/* ---------- Activity timeline ---------- */
+// Merges status changes and assignment changes, newest first. With withBug, entries name the bug (#N).
+function timeline(statusChanges, assignmentChanges, withBug) {
+  const ref = e => withBug ? ` <b>#${e.bugId}</b>` : "";
+  const status = (statusChanges || []).map(h => ({
+    at: h.changedAt, by: h.changedBy.name, bugId: h.bugId,
+    html: h.oldStatus
+      ? `${withBug ? "moved" + ref(h) : "changed status"} ${esc(label(h.oldStatus))} → ${esc(label(h.newStatus))}`
+      : `reported${withBug ? ref(h) + " " + esc(h.bugTitle) : " the bug"}`
+  }));
+  const assignments = (assignmentChanges || []).map(a => {
+    const target = withBug ? ref(a) : " the bug";
+    let html;
+    if (!a.newAssignee) html = `unassigned${target} from <b>${esc(a.oldAssignee.name)}</b>`;
+    else if (!a.oldAssignee) html = `assigned${target} to <b>${esc(a.newAssignee.name)}</b>`;
+    else html = `reassigned${target} from <b>${esc(a.oldAssignee.name)}</b> to <b>${esc(a.newAssignee.name)}</b>`;
+    return { at: a.changedAt, by: a.changedBy.name, bugId: a.bugId, html };
+  });
+  return [...status, ...assignments].sort((x, y) => new Date(y.at) - new Date(x.at));
+}
+
 /* ---------- Bug dialog ---------- */
 async function openBug(id) {
-  let bug = null, comments = [], history = [], developers = [];
+  let bug = null, comments = [], history = [], assignments = [], developers = [];
   if (id) {
     try {
-      [bug, comments, history] = await Promise.all([
-        api("GET", `/api/bugs/${id}`), api("GET", `/api/bugs/${id}/comments`), api("GET", `/api/bugs/${id}/history`)]);
+      [bug, comments, history, assignments] = await Promise.all([
+        api("GET", `/api/bugs/${id}`), api("GET", `/api/bugs/${id}/comments`), api("GET", `/api/bugs/${id}/history`),
+        api("GET", `/api/bugs/${id}/assignments`)]);
       if (bug.canAssign) {
         developers = (await api("GET", `/api/projects/${bug.project.id}/members`)).filter(u => u.role === "DEVELOPER" && u.enabled);
       }
@@ -496,8 +517,8 @@ async function openBug(id) {
     ${comments.map(c => `<div class="comment"><div class="who">${esc(c.author.name)} · ${fmt(c.createdAt)}</div>${esc(c.commentText)}</div>`).join("") || `<p class="muted">No comments yet.</p>`}
     <div class="field" style="margin-top:8px"><textarea id="newComment" maxlength="2000" placeholder="Add a comment or progress note…" style="min-height:60px"></textarea></div>
     <button type="button" class="btn sm" id="addComment" style="margin-top:6px">Post comment</button></div>
-  <div class="section history"><h3>Status history</h3>${history.slice().reverse().map(h => `<div>${fmt(h.changedAt)}: <b>${esc(h.changedBy.name)}</b> ${h.oldStatus
-      ? `changed status ${esc(label(h.oldStatus))} → ${esc(label(h.newStatus))}` : "reported the bug"}</div>`).join("")}</div>` : "";
+  <div class="section history"><h3>History</h3>${timeline(history, assignments, false).map(e =>
+      `<div>${fmt(e.at)}: <b>${esc(e.by)}</b> ${e.html}</div>`).join("")}</div>` : "";
 
   openDialog(`<form id="bugForm">
     <div class="dlg-head"><h3 style="margin:0">${bug ? `Bug #${bug.id} · ${esc(bug.project.projectName)}` : "Report a bug"}</h3>

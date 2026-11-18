@@ -1,5 +1,6 @@
 package com.bugtracker.controller;
 
+import com.bugtracker.dto.AssignmentHistoryResponse;
 import com.bugtracker.dto.AssignmentRequest;
 import com.bugtracker.dto.BugFilter;
 import com.bugtracker.dto.BugResponse;
@@ -91,5 +92,10 @@ public class BugController {
     @GetMapping("/{id}/history")
     public List<HistoryResponse> history(@PathVariable Long id) {
         return bugService.history(id);
+    }
+
+    @GetMapping("/{id}/assignments")
+    public List<AssignmentHistoryResponse> assignments(@PathVariable Long id) {
+        return bugService.assignmentHistory(id);
     }
 }
