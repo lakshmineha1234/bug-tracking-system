@@ -81,6 +81,9 @@ th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--mute
 th[data-sort]{cursor:pointer;user-select:none}
 td.title{white-space:normal;min-width:220px;font-weight:500}
 tbody tr[data-open]{cursor:pointer}tbody tr[data-open]:hover{background:var(--surface2)}
+.pager{margin-top:12px}
+.pager select{padding:4px 8px}
+.col .linklike{display:block;margin:4px 2px;font-size:13px}
 .board{display:grid;grid-template-columns:repeat(4,minmax(240px,1fr));gap:14px;overflow-x:auto;padding-bottom:8px}
 .col{background:var(--surface2);border-radius:var(--radius);padding:10px;min-height:300px}
 .col.over{outline:2px dashed var(--accent)}

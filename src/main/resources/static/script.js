@@ -16,9 +16,8 @@ let view = "dashboard";
 let projects = [];        // projects visible to the current user
 let allUsers = [];        // admin only
 let boardBugs = [];
-let listBugs = [];
 let renderSeq = 0;
-let filters = { q: "", status: "", priority: "", severity: "", projectId: "", assigneeId: "", sort: "id", dir: -1 };
+let filters = { q: "", status: "", priority: "", severity: "", projectId: "", assigneeId: "", sort: "id", dir: -1, page: 0, size: 20 };
 
 /* ---------- Helpers ---------- */
 const $ = id => document.getElementById(id);
@@ -210,21 +209,32 @@ async function dashboardView() {
 }
 
 /* Board */
+const BOARD_LIMIT = 50; // cards loaded per column
+
 async function boardView() {
-  boardBugs = await api("GET", "/api/bugs");
+  // One request per column, so a busy column can't crowd out the others.
+  const columns = await Promise.all(STATUSES.map(s => api("GET", `/api/bugs?status=${s}&size=${BOARD_LIMIT}`)));
+  boardBugs = columns.flatMap(c => c.content);
   return `<h2>Board</h2><p class="muted" style="margin-top:-8px">Drag a card to another column to change its status. Only moves your role allows will be accepted.</p>
-  <div class="board">${STATUSES.map(s => {
-    const items = boardBugs.filter(b => b.status === s);
-    return `<div class="col" data-status="${s}"><h3><span>${label(s)}</span><span>${items.length}</span></h3>
+  <div class="board">${STATUSES.map((s, i) => {
+    const { content: items, totalElements } = columns[i];
+    const more = totalElements - items.length;
+    return `<div class="col" data-status="${s}"><h3><span>${label(s)}</span><span>${totalElements}</span></h3>
       ${items.map(b => `<div class="ticket" draggable="${b.allowedTransitions.length > 0}" data-id="${b.id}" data-open="${b.id}">
         <div class="id">#${b.id} · ${esc(b.project.projectName)}</div><div class="t">${esc(b.title)}</div>
         <div class="meta">${pill(b.priority)}<span class="muted">${esc(label(b.severity))}</span>
         ${b.assignedTo ? `<span class="avatar" title="${esc(b.assignedTo.name)}">${esc(initials(b.assignedTo.name))}</span>` : ""}</div></div>`).join("")}
+      ${more > 0 ? `<button class="linklike" data-more="${s}">+ ${more} more in All Bugs</button>` : ""}
     </div>`;
   }).join("")}</div>`;
 }
 
 function bindBoard() {
+  document.querySelectorAll("[data-more]").forEach(b => b.onclick = () => {
+    Object.assign(filters, { q: "", priority: "", severity: "", projectId: "", assigneeId: "", status: b.dataset.more, page: 0 });
+    view = "list";
+    render();
+  });
   document.querySelectorAll(".ticket[draggable=true]").forEach(t =>
     t.addEventListener("dragstart", e => e.dataTransfer.setData("text/plain", t.dataset.id)));
   document.querySelectorAll(".col").forEach(c => {
@@ -250,23 +260,31 @@ function bindBoard() {
 }
 
 /* All bugs */
-const PRIORITY_RANK = Object.fromEntries(PRIORITIES.map((p, i) => [p, i]));
-const SEVERITY_RANK = Object.fromEntries(SEVERITIES.map((p, i) => [p, i]));
-const STATUS_RANK = Object.fromEntries(STATUSES.map((p, i) => [p, i]));
-const SORT_KEYS = {
-  id: b => b.id, title: b => b.title.toLowerCase(), project: b => b.project.projectName.toLowerCase(),
-  status: b => STATUS_RANK[b.status], priority: b => PRIORITY_RANK[b.priority], severity: b => SEVERITY_RANK[b.severity],
-  assignee: b => (b.assignedTo ? b.assignedTo.name : "~").toLowerCase(), updatedAt: b => b.updatedAt
-};
+const PAGE_SIZES = [20, 50, 100];
 
-async function listView() {
+// Query string for the current filters and sort (sorting and paging happen on the server).
+function bugQuery(page, size) {
   const params = new URLSearchParams();
   for (const k of ["q", "status", "priority", "severity", "projectId"]) if (filters[k]) params.set(k, filters[k]);
   if (filters.assigneeId === "none") params.set("unassigned", "true");
   else if (filters.assigneeId) params.set("assigneeId", filters.assigneeId);
-  listBugs = await api("GET", "/api/bugs?" + params);
-  const key = SORT_KEYS[filters.sort];
-  const rows = [...listBugs].sort((a, b) => (key(a) > key(b) ? 1 : key(a) < key(b) ? -1 : 0) * filters.dir);
+  params.set("sort", filters.sort);
+  params.set("dir", filters.dir > 0 ? "asc" : "desc");
+  params.set("page", page);
+  params.set("size", size);
+  return params;
+}
+
+async function listView() {
+  let result = await api("GET", "/api/bugs?" + bugQuery(filters.page, filters.size));
+  if (result.content.length === 0 && filters.page > 0 && result.totalPages > 0) {
+    // The page no longer exists (for example after filtering): show the last one instead.
+    filters.page = result.totalPages - 1;
+    result = await api("GET", "/api/bugs?" + bugQuery(filters.page, filters.size));
+  }
+  const rows = result.content;
+  const first = result.page * result.size + 1;
+  const last = result.page * result.size + rows.length;
   const cols = [["id", "ID"], ["title", "Title"], ["project", "Project"], ["status", "Status"], ["priority", "Priority"],
     ["severity", "Severity"], ["assignee", "Assignee"], ["updatedAt", "Updated"]];
   const developers = allUsers.filter(u => u.role === "DEVELOPER");
@@ -290,7 +308,15 @@ async function listView() {
       <td>${b.assignedTo ? esc(b.assignedTo.name) : '<span class="muted">Unassigned</span>'}</td>
       <td class="muted">${ago(b.updatedAt)}</td></tr>`).join("")}</tbody></table>`
     : `<div class="empty">No bugs match these filters.</div>`}</div>
-  <p class="muted">${rows.length} bug${rows.length === 1 ? "" : "s"}</p>`;
+  <div class="toolbar pager">
+    <span class="muted">${result.totalElements ? `${first}–${last} of ${result.totalElements} bug${result.totalElements === 1 ? "" : "s"}` : "0 bugs"}</span>
+    <span class="spacer"></span>
+    <label class="muted" for="pageSize">Per page</label>
+    <select id="pageSize">${opts(PAGE_SIZES, filters.size, null, String)}</select>
+    <button class="btn sm" id="prevPage" ${result.page === 0 ? "disabled" : ""}>‹ Previous</button>
+    <span class="muted">Page ${result.totalPages ? result.page + 1 : 0} of ${result.totalPages}</span>
+    <button class="btn sm" id="nextPage" ${result.page + 1 >= result.totalPages ? "disabled" : ""}>Next ›</button>
+  </div>`;
 }
 
 let searchTimer;
@@ -300,6 +326,7 @@ function bindList() {
     clearTimeout(searchTimer);
     searchTimer = setTimeout(async () => {
       filters.q = q.value;
+      filters.page = 0;
       const pos = q.selectionStart;
       await render();
       const n = $("fq");
@@ -308,10 +335,10 @@ function bindList() {
   });
   ["status", "priority", "severity", "projectId", "assigneeId"].forEach(k => {
     const el = $("f" + k);
-    if (el) el.addEventListener("change", e => { filters[k] = e.target.value; render(); });
+    if (el) el.addEventListener("change", e => { filters[k] = e.target.value; filters.page = 0; render(); });
   });
   $("fclear").onclick = () => {
-    Object.assign(filters, { q: "", status: "", priority: "", severity: "", projectId: "", assigneeId: "" });
+    Object.assign(filters, { q: "", status: "", priority: "", severity: "", projectId: "", assigneeId: "", page: 0 });
     render();
   };
   $("fcsv").onclick = exportCSV;
@@ -319,16 +346,36 @@ function bindList() {
     const k = th.dataset.sort;
     filters.dir = filters.sort === k ? -filters.dir : 1;
     filters.sort = k;
+    filters.page = 0;
     render();
   });
+  $("pageSize").onchange = e => { filters.size = Number(e.target.value); filters.page = 0; render(); };
+  $("prevPage").onclick = () => { filters.page = Math.max(0, filters.page - 1); render(); };
+  $("nextPage").onclick = () => { filters.page += 1; render(); };
 }
 
-function exportCSV() {
+// Exports every bug matching the current filters, not just the page on screen.
+async function exportCSV() {
+  const btn = $("fcsv");
+  btn.disabled = true;
+  let all = [];
+  try {
+    for (let page = 0, totalPages = 1; page < totalPages; page++) {
+      const result = await api("GET", "/api/bugs?" + bugQuery(page, 100));
+      all = all.concat(result.content);
+      totalPages = result.totalPages;
+    }
+  } catch (err) {
+    toast(err.message);
+    return;
+  } finally {
+    btn.disabled = false;
+  }
   const cols = [["id", b => b.id], ["title", b => b.title], ["project", b => b.project.projectName], ["status", b => b.status],
     ["priority", b => b.priority], ["severity", b => b.severity], ["assignee", b => b.assignedTo ? b.assignedTo.name : ""],
     ["reporter", b => b.reportedBy.name], ["created", b => b.createdAt], ["updated", b => b.updatedAt]];
   const q = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
-  const csv = [cols.map(c => c[0]).join(","), ...listBugs.map(b => cols.map(c => q(c[1](b))).join(","))].join("\n");
+  const csv = [cols.map(c => c[0]).join(","), ...all.map(b => cols.map(c => q(c[1](b))).join(","))].join("\n");
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
   a.download = "bugs.csv";
@@ -368,7 +415,7 @@ function bindProjects() {
     } catch (err) { toast(err.message); }
   };
   document.querySelectorAll("[data-bugs]").forEach(b => b.onclick = () => {
-    Object.assign(filters, { q: "", status: "", priority: "", severity: "", assigneeId: "", projectId: b.dataset.bugs });
+    Object.assign(filters, { q: "", status: "", priority: "", severity: "", assigneeId: "", projectId: b.dataset.bugs, page: 0 });
     view = "list";
     render();
   });

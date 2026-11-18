@@ -143,7 +143,8 @@ class BugApiIntegrationTest {
                 .andExpect(status().isForbidden());
         mvc.perform(get("/api/bugs").with(as(otherDeveloper)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$", hasSize(0)));
+                .andExpect(jsonPath("$.content", hasSize(0)))
+                .andExpect(jsonPath("$.totalElements").value(0));
     }
 
     @Test
@@ -164,8 +165,63 @@ class BugApiIntegrationTest {
 
         mvc.perform(get("/api/bugs").param("status", "OPEN").with(as(tester)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$", hasSize(1)))
-                .andExpect(jsonPath("$[0].title").value("Second"));
+                .andExpect(jsonPath("$.content", hasSize(1)))
+                .andExpect(jsonPath("$.content[0].title").value("Second"))
+                .andExpect(jsonPath("$.totalElements").value(1));
+    }
+
+    @Test
+    void bugListIsPaged() throws Exception {
+        for (int i = 1; i <= 5; i++) {
+            createBug("Bug " + i, "LOW", "MINOR");
+        }
+
+        mvc.perform(get("/api/bugs").param("size", "2").with(as(tester)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content", hasSize(2)))
+                .andExpect(jsonPath("$.content[0].title").value("Bug 5")) // newest first by default
+                .andExpect(jsonPath("$.content[1].title").value("Bug 4"))
+                .andExpect(jsonPath("$.page").value(0))
+                .andExpect(jsonPath("$.size").value(2))
+                .andExpect(jsonPath("$.totalElements").value(5))
+                .andExpect(jsonPath("$.totalPages").value(3));
+
+        mvc.perform(get("/api/bugs").param("size", "2").param("page", "2").with(as(tester)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content", hasSize(1)))
+                .andExpect(jsonPath("$.content[0].title").value("Bug 1"));
+    }
+
+    @Test
+    void bugListSortsByImportanceNotAlphabetically() throws Exception {
+        createBug("Low one", "LOW", "MINOR");
+        createBug("Critical one", "CRITICAL", "CRITICAL");
+        createBug("Medium one", "MEDIUM", "MAJOR");
+        createBug("High one", "HIGH", "MAJOR");
+
+        mvc.perform(get("/api/bugs").param("sort", "priority").param("dir", "asc").with(as(tester)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].priority").value("CRITICAL"))
+                .andExpect(jsonPath("$.content[1].priority").value("HIGH"))
+                .andExpect(jsonPath("$.content[2].priority").value("MEDIUM"))
+                .andExpect(jsonPath("$.content[3].priority").value("LOW"));
+
+        mvc.perform(get("/api/bugs").param("sort", "title").param("dir", "asc").with(as(tester)))
+                .andExpect(jsonPath("$.content[0].title").value("Critical one"))
+                .andExpect(jsonPath("$.content[3].title").value("Medium one"));
+    }
+
+    @Test
+    void invalidPagingParametersAreRejected() throws Exception {
+        mvc.perform(get("/api/bugs").param("size", "101").with(as(admin)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(containsString("size")));
+        mvc.perform(get("/api/bugs").param("page", "-1").with(as(admin)))
+                .andExpect(status().isBadRequest());
+        mvc.perform(get("/api/bugs").param("sort", "password").with(as(admin)))
+                .andExpect(status().isBadRequest());
+        mvc.perform(get("/api/bugs").param("dir", "sideways").with(as(admin)))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

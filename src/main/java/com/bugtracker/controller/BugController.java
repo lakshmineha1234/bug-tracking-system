@@ -8,6 +8,7 @@ import com.bugtracker.dto.CommentRequest;
 import com.bugtracker.dto.CommentResponse;
 import com.bugtracker.dto.CreateBugRequest;
 import com.bugtracker.dto.HistoryResponse;
+import com.bugtracker.dto.PageResponse;
 import com.bugtracker.dto.StatusChangeRequest;
 import com.bugtracker.dto.UpdateBugRequest;
 import com.bugtracker.entity.BugStatus;
@@ -41,15 +42,25 @@ public class BugController {
         this.bugService = bugService;
     }
 
+    /**
+     * Lists accessible bugs one page at a time.
+     * page is zero-based; size is 1-100; sort is one of id, title, project, status, priority, severity,
+     * assignee, updatedAt; dir is asc or desc.
+     */
     @GetMapping
-    public List<BugResponse> list(@RequestParam(required = false) String q,
-                                  @RequestParam(required = false) BugStatus status,
-                                  @RequestParam(required = false) Priority priority,
-                                  @RequestParam(required = false) Severity severity,
-                                  @RequestParam(required = false) Long projectId,
-                                  @RequestParam(required = false) Long assigneeId,
-                                  @RequestParam(required = false) Boolean unassigned) {
-        return bugService.list(new BugFilter(q, status, priority, severity, projectId, assigneeId, unassigned));
+    public PageResponse<BugResponse> list(@RequestParam(required = false) String q,
+                                          @RequestParam(required = false) BugStatus status,
+                                          @RequestParam(required = false) Priority priority,
+                                          @RequestParam(required = false) Severity severity,
+                                          @RequestParam(required = false) Long projectId,
+                                          @RequestParam(required = false) Long assigneeId,
+                                          @RequestParam(required = false) Boolean unassigned,
+                                          @RequestParam(defaultValue = "0") int page,
+                                          @RequestParam(defaultValue = "20") int size,
+                                          @RequestParam(defaultValue = "id") String sort,
+                                          @RequestParam(defaultValue = "desc") String dir) {
+        return bugService.list(new BugFilter(q, status, priority, severity, projectId, assigneeId, unassigned),
+                page, size, sort, dir);
     }
 
     @GetMapping("/{id}")

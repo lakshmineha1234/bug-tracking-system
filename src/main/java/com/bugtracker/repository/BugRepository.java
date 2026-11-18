@@ -1,6 +1,8 @@
 package com.bugtracker.repository;
 
 import com.bugtracker.entity.Bug;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.EntityGraph;
@@ -15,4 +17,8 @@ public interface BugRepository extends JpaRepository<Bug, Long>, JpaSpecificatio
     @Override
     @EntityGraph(attributePaths = {"project", "reportedBy", "assignedTo"})
     List<Bug> findAll(Specification<Bug> spec, Sort sort);
+
+    @Override
+    @EntityGraph(attributePaths = {"project", "reportedBy", "assignedTo"})
+    Page<Bug> findAll(Specification<Bug> spec, Pageable pageable);
 }

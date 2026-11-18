@@ -8,6 +8,7 @@ import com.bugtracker.dto.CommentRequest;
 import com.bugtracker.dto.CommentResponse;
 import com.bugtracker.dto.CreateBugRequest;
 import com.bugtracker.dto.HistoryResponse;
+import com.bugtracker.dto.PageResponse;
 import com.bugtracker.dto.StatusChangeRequest;
 import com.bugtracker.dto.UpdateBugRequest;
 import com.bugtracker.entity.AssignmentHistory;
@@ -29,11 +30,14 @@ import com.bugtracker.repository.ProjectRepository;
 import com.bugtracker.repository.UserRepository;
 import com.bugtracker.security.CurrentUserService;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Locale;
+import java.util.TreeSet;
 
 @Service
 @Transactional
@@ -62,14 +66,32 @@ public class BugService {
         this.events = events;
     }
 
+    public static final int MAX_PAGE_SIZE = 100;
+
+    /** One page of the bugs the current user can access that match the filter. page is zero-based. */
     @Transactional(readOnly = true)
-    public List<BugResponse> list(BugFilter filter) {
+    public PageResponse<BugResponse> list(BugFilter filter, int page, int size, String sort, String dir) {
+        if (page < 0) {
+            throw new BadRequestException("page must be 0 or greater");
+        }
+        if (size < 1 || size > MAX_PAGE_SIZE) {
+            throw new BadRequestException("size must be between 1 and " + MAX_PAGE_SIZE);
+        }
+        if (!BugSpecifications.SORT_KEYS.contains(sort)) {
+            throw new BadRequestException("sort must be one of " + new TreeSet<>(BugSpecifications.SORT_KEYS));
+        }
+        boolean ascending = switch (dir.toLowerCase(Locale.ROOT)) {
+            case "asc" -> true;
+            case "desc" -> false;
+            default -> throw new BadRequestException("dir must be asc or desc");
+        };
         User me = currentUser.get();
-        return bugs.findAll(BugSpecifications.visibleTo(me).and(BugSpecifications.matches(filter)),
-                        Sort.by(Sort.Direction.DESC, "id"))
-                .stream()
-                .map(bug -> toResponse(bug, me))
-                .toList();
+        Page<Bug> result = bugs.findAll(
+                BugSpecifications.visibleTo(me)
+                        .and(BugSpecifications.matches(filter))
+                        .and(BugSpecifications.orderBy(sort, ascending)),
+                PageRequest.of(page, size));
+        return PageResponse.from(result.map(bug -> toResponse(bug, me)));
     }
 
     @Transactional(readOnly = true)

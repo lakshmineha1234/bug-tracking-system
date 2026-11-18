@@ -176,7 +176,7 @@ Suggested first steps: create a project, have a tester and a developer register,
 | PUT | `/api/projects/{id}` | Edit a project (admin) |
 | GET | `/api/projects/{id}/members` | List project members |
 | POST / DELETE | `/api/projects/{id}/members/{userId}` | Add / remove a member (admin) |
-| GET | `/api/bugs` | List accessible bugs. Filters: `q`, `status`, `priority`, `severity`, `projectId`, `assigneeId`, `unassigned=true` |
+| GET | `/api/bugs` | List accessible bugs, one page at a time (see below). Filters: `q`, `status`, `priority`, `severity`, `projectId`, `assigneeId`, `unassigned=true` |
 | GET | `/api/bugs/{id}` | Get one bug |
 | POST | `/api/bugs` | Report a bug (tester, admin) |
 | PUT | `/api/bugs/{id}` | Edit bug details (reporter, admin) |
@@ -186,6 +186,17 @@ Suggested first steps: create a project, have a tester and a developer register,
 | GET | `/api/bugs/{id}/history` | Status history |
 | GET | `/api/bugs/{id}/assignments` | Assignment history (assigned, reassigned, unassigned) |
 | GET | `/api/dashboard/summary` | Dashboard statistics |
+
+`GET /api/bugs` returns one page: `{content, page, size, totalElements, totalPages}`. Paging and sorting parameters:
+
+| Parameter | Default | Values |
+|---|---|---|
+| `page` | `0` | Zero-based page number |
+| `size` | `20` | 1–100 |
+| `sort` | `id` | `id`, `title`, `project`, `status`, `priority`, `severity`, `assignee`, `updatedAt` |
+| `dir` | `desc` | `asc` or `desc` |
+
+Status, priority and severity sort by importance, not alphabetically: `sort=priority&dir=asc` lists Critical first. Example: `GET /api/bugs?status=OPEN&sort=priority&dir=asc&page=0&size=50`.
 
 Errors are returned as JSON: `{timestamp, status, error, message, fieldErrors}`.
 
@@ -225,4 +236,4 @@ bug-tracking-system/
 ## Known limitations and future improvements
 
 - No CORS configuration is needed because the backend serves the frontend from the same origin. If the frontend is ever hosted separately, allow only that origin.
-- Not yet implemented: file attachments, email notifications, sprints/releases, PDF reports, GitHub integration, pagination of bug lists.
+- Not yet implemented: file attachments, sprints/releases, PDF reports, GitHub integration.
