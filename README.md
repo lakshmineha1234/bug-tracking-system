@@ -1,5 +1,7 @@
 # BugTrack – Bug Tracking and Management System
 
+[![Tests](https://github.com/lakshmineha1234/bug-tracking-system/actions/workflows/ci.yml/badge.svg)](https://github.com/lakshmineha1234/bug-tracking-system/actions/workflows/ci.yml)
+
 A web application for software teams to report, assign, track and resolve bugs.
 Testers report defects, admins manage projects and assignments, and developers work on the bugs assigned to them.
 
