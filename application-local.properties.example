@@ -1,0 +1,35 @@
+# Local settings for BugTrack.
+# Copy this file to application-local.properties (which git ignores) and fill in your own values.
+# The app loads it automatically when started from the project folder (run.cmd or mvnw spring-boot:run).
+# Never commit the real file: it contains passwords.
+
+# --- Database (MySQL) ---
+spring.datasource.url=jdbc:mysql://127.0.0.1:3306/bug_tracking_db
+spring.datasource.username=bugtrack
+spring.datasource.password=CHANGE_ME
+
+# --- First admin account ---
+# Created on startup only if no admin exists yet. Use at least 8 characters for the password.
+app.admin.email=admin@example.com
+app.admin.password=CHANGE_ME
+app.admin.name=Administrator
+
+# --- Email notifications ---
+# While disabled, notification emails are written to the log instead of being sent.
+app.mail.enabled=false
+app.mail.from=BugTrack <no-reply@example.com>
+# Address used for links in emails
+app.base-url=http://localhost:8080
+
+# Option 1: local test mail server that prints every email it receives (Python 3.11 or earlier):
+#   python -m smtpd -n -c DebuggingServer 127.0.0.1:1025
+#spring.mail.host=127.0.0.1
+#spring.mail.port=1025
+
+# Option 2: a real mail service, for example Gmail with an app password:
+#spring.mail.host=smtp.gmail.com
+#spring.mail.port=587
+#spring.mail.username=your.address@gmail.com
+#spring.mail.password=your-app-password
+#spring.mail.properties.mail.smtp.auth=true
+#spring.mail.properties.mail.smtp.starttls.enable=true

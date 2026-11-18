@@ -138,7 +138,7 @@ python -m smtpd -n -c DebuggingServer 127.0.0.1:1025
 
 ## Running
 
-Quick start on Windows: put your settings in `application-local.properties` in the project folder (git-ignored; same keys as `src/main/resources/application.properties`, for example `spring.datasource.password=...` and `app.admin.email=...`), then:
+Quick start on Windows: copy `application-local.properties.example` to `application-local.properties` in the project folder and fill in your database password and first admin account (the copy is git-ignored, so your passwords stay local), then:
 
 1. `start-mysql.cmd` if MySQL is not already running as a service (uses a data folder under `%USERPROFILE%\.bugtrack-mysql`)
 2. `run.cmd` to start the app on http://localhost:8080
