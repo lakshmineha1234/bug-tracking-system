@@ -13,3 +13,6 @@ application-local.properties
 
 # Local tool config
 .claude/
+
+# Uploaded attachments (local data, not source code)
+data/

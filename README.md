@@ -54,6 +54,7 @@ The interface follows the operating system's light or dark setting by default. T
 - Dashboard: counts by status, priority, severity, project and assignee, plus recent activity
 - Search and filters (keyword, status, priority, severity, project, assignee), Kanban board, CSV export
 - Email notification to a developer when a bug is assigned to them, with a link that opens the bug
+- File attachments on bugs (screenshots, PDFs, logs, CSV, JSON, ZIP; up to 10 MB each) with image previews
 - Light and dark themes, with a toggle in the header
 
 ## User roles
@@ -94,7 +95,7 @@ Java 17+, Spring Boot 3.5 (Web, Data JPA, Security, Validation, Mail), Flyway, M
 CREATE DATABASE bug_tracking_db;
 ```
 
-The tables (`users`, `projects`, `project_members`, `bugs`, `comments`, `bug_history`, `assignment_history`) are created on first start by [Flyway](https://documentation.red-gate.com/flyway) migrations in `src/main/resources/db/migration`. Flyway records what it has applied in `flyway_schema_history`, and Hibernate only checks that the tables match the entities (`ddl-auto=validate`).
+The tables (`users`, `projects`, `project_members`, `bugs`, `comments`, `bug_history`, `assignment_history`, `attachments`) are created on first start by [Flyway](https://documentation.red-gate.com/flyway) migrations in `src/main/resources/db/migration`. Flyway records what it has applied in `flyway_schema_history`, and Hibernate only checks that the tables match the entities (`ddl-auto=validate`).
 
 To change the schema, add a new file such as `V3__add_attachments.sql`; never edit a migration that has already been applied. A database created before migrations were introduced is detected automatically, marked as version 1, and then upgraded.
 
@@ -116,6 +117,7 @@ Settings are read from environment variables, so no secrets are stored in the co
 | `MAIL_SMTP_AUTH` / `MAIL_STARTTLS` | `false` / `false` | Set both to `true` for most hosted mail services |
 | `MAIL_FROM` | `BugTrack <no-reply@bugtrack.local>` | Sender address |
 | `APP_BASE_URL` | `http://localhost:8080` | Address used for links in emails |
+| `ATTACHMENTS_DIR` | `data/attachments` | Folder where attachment files are stored (relative to the folder the app starts in) |
 
 ### Email notifications
 
@@ -160,6 +162,12 @@ Then open http://localhost:8080 and sign in as the admin. The backend serves the
 
 Suggested first steps: create a project, have a tester and a developer register, add them to the project (Projects → Members), report a bug as the tester, assign it as the admin, then work it through the lifecycle.
 
+## Attachments
+
+Anyone who can see a bug can view, download and add attachments; only the uploader or an admin can delete one. Allowed types are PNG, JPG, GIF, WebP, PDF, TXT, LOG, CSV, JSON and ZIP, up to 10 MB each. The type is checked from the file's contents, not only its name, so a renamed file is refused, and types a browser could run as a page (such as HTML or SVG) are never accepted. Only images are shown in the browser; everything else is downloaded.
+
+Files are stored on disk in `ATTACHMENTS_DIR` under random names, while the database keeps their names, sizes and uploaders. **Back up that folder together with the database.**
+
 ## API summary
 
 | Method | Endpoint | Purpose |
@@ -185,6 +193,10 @@ Suggested first steps: create a project, have a tester and a developer register,
 | GET / POST | `/api/bugs/{id}/comments` | List / add comments |
 | GET | `/api/bugs/{id}/history` | Status history |
 | GET | `/api/bugs/{id}/assignments` | Assignment history (assigned, reassigned, unassigned) |
+| GET | `/api/bugs/{id}/attachments` | List a bug's attachments |
+| POST | `/api/bugs/{id}/attachments` | Upload one file (multipart form field `file`) |
+| GET | `/api/attachments/{id}` | Download a file (`?inline=true` shows an image in the browser) |
+| DELETE | `/api/attachments/{id}` | Delete an attachment (uploader or admin) |
 | GET | `/api/dashboard/summary` | Dashboard statistics |
 
 `GET /api/bugs` returns one page: `{content, page, size, totalElements, totalPages}`. Paging and sorting parameters:
@@ -228,7 +240,7 @@ bug-tracking-system/
     │   └── service/       Business logic, permissions, workflow
     ├── main/resources/
     │   ├── application.properties
-    │   ├── db/migration/  Flyway migrations (V1__initial_schema.sql, V2__assignment_history.sql)
+    │   ├── db/migration/  Flyway migrations (V1__initial_schema.sql, V2__assignment_history.sql, V3__attachments.sql)
     │   └── static/        index.html, style.css, script.js
     └── test/              Unit and integration tests
 ```
@@ -236,4 +248,4 @@ bug-tracking-system/
 ## Known limitations and future improvements
 
 - No CORS configuration is needed because the backend serves the frontend from the same origin. If the frontend is ever hosted separately, allow only that origin.
-- Not yet implemented: file attachments, sprints/releases, PDF reports, GitHub integration.
+- Not yet implemented: sprints/releases, PDF reports, GitHub integration.

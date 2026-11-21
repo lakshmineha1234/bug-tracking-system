@@ -63,7 +63,9 @@ async function loadCsrf() {
 
 async function api(method, url, body) {
   const opt = { method, headers: { Accept: "application/json" } };
-  if (body !== undefined) {
+  if (body instanceof FormData) {
+    opt.body = body; // file upload: the browser sets the multipart Content-Type itself
+  } else if (body !== undefined) {
     opt.headers["Content-Type"] = "application/json";
     opt.body = JSON.stringify(body);
   }
@@ -527,14 +529,81 @@ function timeline(statusChanges, assignmentChanges, withBug) {
   return [...status, ...assignments].sort((x, y) => new Date(y.at) - new Date(x.at));
 }
 
+/* ---------- Attachments ---------- */
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+const ATTACHMENT_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".pdf", ".txt", ".log", ".csv", ".json", ".zip"];
+
+function formatSize(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function attachmentsSection(attachments) {
+  const items = attachments.map(a => {
+    const ext = (a.filename.split(".").pop() || "").toUpperCase().slice(0, 4);
+    const preview = a.image
+      ? `<a href="/api/attachments/${a.id}?inline=true" target="_blank" rel="noopener" title="Open full size">
+           <img class="att-thumb" src="/api/attachments/${a.id}?inline=true" alt="${esc(a.filename)}" loading="lazy"></a>`
+      : `<div class="att-thumb att-file">${esc(ext)}</div>`;
+    return `<div class="attachment">${preview}
+      <div class="att-meta"><a href="/api/attachments/${a.id}" download="${esc(a.filename)}">${esc(a.filename)}</a>
+        <div class="muted">${formatSize(a.sizeBytes)} · ${esc(a.uploadedBy.name)} · ${ago(a.createdAt)}</div></div>
+      ${a.canDelete ? `<button type="button" class="btn sm danger" data-del-att="${a.id}" title="Delete ${esc(a.filename)}">Delete</button>` : ""}
+    </div>`;
+  }).join("");
+  return `<div class="section"><h3>Attachments (${attachments.length})</h3>
+    ${items ? `<div class="attachments">${items}</div>` : `<p class="muted">No attachments yet.</p>`}
+    <div class="workflow" style="margin-top:8px">
+      <input type="file" id="attFile" accept="${ATTACHMENT_EXTENSIONS.join(",")}" hidden>
+      <button type="button" class="btn sm" id="attPick">Attach a file</button>
+      <span class="muted">Screenshots, PDF, logs, CSV, JSON or ZIP · up to 10 MB</span>
+    </div></div>`;
+}
+
+function bindAttachments(bugId, reopen) {
+  const input = $("attFile");
+  $("attPick").onclick = () => input.click();
+  input.onchange = async () => {
+    const file = input.files[0];
+    input.value = "";
+    if (!file) return;
+    if (file.size > MAX_UPLOAD_BYTES) {
+      toast(`${file.name} is ${formatSize(file.size)}. The maximum is 10 MB.`);
+      return;
+    }
+    const fd = new FormData();
+    fd.append("file", file);
+    $("attPick").disabled = true;
+    $("attPick").textContent = "Uploading…";
+    try {
+      await api("POST", `/api/bugs/${bugId}/attachments`, fd);
+      toast(`Attached ${file.name}`);
+      reopen();
+    } catch (err) {
+      toast(err.message);
+      $("attPick").disabled = false;
+      $("attPick").textContent = "Attach a file";
+    }
+  };
+  document.querySelectorAll("[data-del-att]").forEach(btn => btn.onclick = async () => {
+    if (!confirm("Delete this attachment? This cannot be undone.")) return;
+    try {
+      await api("DELETE", `/api/attachments/${btn.dataset.delAtt}`);
+      toast("Attachment deleted");
+      reopen();
+    } catch (err) { toast(err.message); }
+  });
+}
+
 /* ---------- Bug dialog ---------- */
 async function openBug(id) {
-  let bug = null, comments = [], history = [], assignments = [], developers = [];
+  let bug = null, comments = [], history = [], assignments = [], attachments = [], developers = [];
   if (id) {
     try {
-      [bug, comments, history, assignments] = await Promise.all([
+      [bug, comments, history, assignments, attachments] = await Promise.all([
         api("GET", `/api/bugs/${id}`), api("GET", `/api/bugs/${id}/comments`), api("GET", `/api/bugs/${id}/history`),
-        api("GET", `/api/bugs/${id}/assignments`)]);
+        api("GET", `/api/bugs/${id}/assignments`), api("GET", `/api/bugs/${id}/attachments`)]);
       if (bug.canAssign) {
         developers = (await api("GET", `/api/projects/${bug.project.id}/members`)).filter(u => u.role === "DEVELOPER" && u.enabled);
       }
@@ -564,6 +633,7 @@ async function openBug(id) {
     ${comments.map(c => `<div class="comment"><div class="who">${esc(c.author.name)} · ${fmt(c.createdAt)}</div>${esc(c.commentText)}</div>`).join("") || `<p class="muted">No comments yet.</p>`}
     <div class="field" style="margin-top:8px"><textarea id="newComment" maxlength="2000" placeholder="Add a comment or progress note…" style="min-height:60px"></textarea></div>
     <button type="button" class="btn sm" id="addComment" style="margin-top:6px">Post comment</button></div>
+  ${attachmentsSection(attachments)}
   <div class="section history"><h3>History</h3>${timeline(history, assignments, false).map(e =>
       `<div>${fmt(e.at)}: <b>${esc(e.by)}</b> ${e.html}</div>`).join("")}</div>` : "";
 
@@ -631,6 +701,7 @@ async function openBug(id) {
       openBug(bug.id);
     } catch (err) { toast(err.message); }
   };
+  bindAttachments(bug.id, () => openBug(bug.id));
 }
 
 /* ---------- Theme ---------- */

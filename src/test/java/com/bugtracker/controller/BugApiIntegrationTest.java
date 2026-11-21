@@ -275,9 +275,10 @@ class BugApiIntegrationTest {
                 .andExpect(jsonPath("$[2].oldAssignee.name").value("Dev Two"))
                 .andExpect(jsonPath("$[2].newAssignee").value(nullValue()));
 
+        // Other test classes may have committed assignments too, so only count this bug's entries.
         mvc.perform(get("/api/dashboard/summary").with(as(admin)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.recentAssignments", hasSize(3)));
+                .andExpect(jsonPath("$.recentAssignments[?(@.bugId == " + bugId + ")]", hasSize(3)));
     }
 
     @Test
