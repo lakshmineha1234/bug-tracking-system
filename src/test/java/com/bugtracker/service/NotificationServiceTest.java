@@ -7,7 +7,9 @@ import com.bugtracker.entity.Project;
 import com.bugtracker.entity.Role;
 import com.bugtracker.entity.Severity;
 import com.bugtracker.entity.User;
+import com.bugtracker.entity.Comment;
 import com.bugtracker.repository.BugRepository;
+import com.bugtracker.repository.CommentRepository;
 import com.bugtracker.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -21,6 +23,7 @@ import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -28,6 +31,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -36,21 +40,26 @@ class NotificationServiceTest {
 
     @Mock private BugRepository bugs;
     @Mock private UserRepository users;
+    @Mock private CommentRepository comments;
     @Mock private ObjectProvider<JavaMailSender> mailSenderProvider;
     @Mock private JavaMailSender mailSender;
 
     private Bug bug;
     private User admin;
+    private User tester;
     private User developer;
 
     @BeforeEach
     void setUp() {
         admin = user(1L, "Ada Admin", "admin@example.com", Role.ADMIN);
-        User tester = user(2L, "Tess Tester", "tester@example.com", Role.TESTER);
+        tester = user(2L, "Tess Tester", "tester@example.com", Role.TESTER);
         developer = user(3L, "Dev Developer", "dev@example.com", Role.DEVELOPER);
         Project project = new Project();
         project.setProjectName("Web App");
+        project.addMember(tester);
+        project.addMember(developer);
         bug = new Bug();
+        bug.setAssignedTo(developer);
         ReflectionTestUtils.setField(bug, "id", 8L);
         bug.setTitle("Search pagination skips page 2");
         bug.setStepsToReproduce("1. Search\n2. Click Next");
@@ -107,6 +116,20 @@ class NotificationServiceTest {
 
         assertThatCode(() -> service(true).onBugAssigned(new BugAssignedEvent(8L, 3L, 1L)))
                 .doesNotThrowAnyException();
+        verify(mailSender, times(3)).send(any(SimpleMailMessage.class)); // first try + 2 retries
+    }
+
+    @Test
+    void temporaryMailFailureIsRetried() {
+        when(bugs.findById(8L)).thenReturn(Optional.of(bug));
+        when(users.findById(3L)).thenReturn(Optional.of(developer));
+        when(users.findById(1L)).thenReturn(Optional.of(admin));
+        when(mailSenderProvider.getIfAvailable()).thenReturn(mailSender);
+        doThrow(new MailSendException("timeout")).doNothing().when(mailSender).send(any(SimpleMailMessage.class));
+
+        service(true).onBugAssigned(new BugAssignedEvent(8L, 3L, 1L));
+
+        verify(mailSender, times(2)).send(any(SimpleMailMessage.class)); // failed once, then delivered
     }
 
     @Test
@@ -119,9 +142,109 @@ class NotificationServiceTest {
         verify(mailSenderProvider, never()).getIfAvailable();
     }
 
+    @Test
+    void fixedBugAsksTheReporterToRetest() {
+        List<SimpleMailMessage> mails = service(true).statusEmails(bug, BugStatus.IN_PROGRESS, BugStatus.FIXED, developer);
+
+        assertThat(mails).hasSize(1);
+        assertThat(mails.get(0).getTo()).containsExactly("tester@example.com");
+        assertThat(mails.get(0).getSubject())
+                .isEqualTo("[BugTrack] Bug #8 is fixed and ready for testing: Search pagination skips page 2");
+        assertThat(mails.get(0).getText())
+                .contains("Hi Tess Tester,")
+                .contains("Dev Developer marked bug #8 as fixed.")
+                .contains("Open the bug: https://bugs.example.com/#bug-8")
+                .contains("because you reported this bug");
+    }
+
+    @Test
+    void returnedClosedAndReopenedBugsNotifyTheDeveloper() {
+        NotificationService service = service(true);
+        assertThat(service.statusEmails(bug, BugStatus.FIXED, BugStatus.IN_PROGRESS, tester))
+                .singleElement().satisfies(m -> {
+                    assertThat(m.getTo()).containsExactly("dev@example.com");
+                    assertThat(m.getSubject()).startsWith("[BugTrack] Bug #8 was returned to you");
+                });
+        assertThat(service.statusEmails(bug, BugStatus.FIXED, BugStatus.CLOSED, tester))
+                .singleElement().satisfies(m -> assertThat(m.getSubject()).startsWith("[BugTrack] Bug #8 was verified and closed"));
+        assertThat(service.statusEmails(bug, BugStatus.CLOSED, BugStatus.OPEN, tester))
+                .singleElement().satisfies(m -> assertThat(m.getSubject()).startsWith("[BugTrack] Bug #8 was reopened"));
+    }
+
+    @Test
+    void statusEmailShowsTheStatusFromItsOwnChange() {
+        bug.setStatus(BugStatus.CLOSED); // the bug has moved on by the time the queued email is written
+        assertThat(service(true).statusEmails(bug, BugStatus.FIXED, BugStatus.IN_PROGRESS, tester))
+                .singleElement()
+                .satisfies(m -> assertThat(m.getText()).contains("Status:      In Progress").doesNotContain("Closed"));
+    }
+
+    @Test
+    void startingWorkSendsNothing() {
+        assertThat(service(true).statusEmails(bug, BugStatus.OPEN, BugStatus.IN_PROGRESS, developer)).isEmpty();
+    }
+
+    @Test
+    void nobodyIsEmailedAboutTheirOwnAction() {
+        bug.setReportedBy(admin);
+        // The admin marks fixed a bug they reported themselves: no email to the admin.
+        assertThat(service(true).statusEmails(bug, BugStatus.IN_PROGRESS, BugStatus.FIXED, admin)).isEmpty();
+    }
+
+    @Test
+    void disabledUsersAndUsersWhoCannotSeeTheBugAreSkipped() {
+        tester.setEnabled(false);
+        assertThat(service(true).statusEmails(bug, BugStatus.IN_PROGRESS, BugStatus.FIXED, developer)).isEmpty();
+
+        tester.setEnabled(true);
+        bug.getProject().removeMember(tester.getId()); // the tester left the project
+        assertThat(service(true).statusEmails(bug, BugStatus.IN_PROGRESS, BugStatus.FIXED, developer)).isEmpty();
+    }
+
+    @Test
+    void commentsGoToReporterAndAssigneeButNotTheAuthor() {
+        Comment comment = new Comment(bug, developer, "Found the cause.\nFix is on the way.");
+        List<SimpleMailMessage> mails = service(true).commentEmails(comment);
+
+        assertThat(mails).hasSize(1);
+        SimpleMailMessage mail = mails.get(0);
+        assertThat(mail.getTo()).containsExactly("tester@example.com");
+        assertThat(mail.getSubject()).isEqualTo("[BugTrack] New comment on bug #8: Search pagination skips page 2");
+        assertThat(mail.getText())
+                .contains("Dev Developer commented on bug #8:")
+                .contains("  Found the cause.\n  Fix is on the way.");
+
+        Comment byAdmin = new Comment(bug, admin, "Any update?");
+        assertThat(service(true).commentEmails(byAdmin))
+                .extracting(m -> m.getTo()[0])
+                .containsExactlyInAnyOrder("tester@example.com", "dev@example.com");
+    }
+
+    @Test
+    void commentByReporterWhoIsAlsoAssigneeEmailsNobody() {
+        bug.setReportedBy(developer); // same person reported and is assigned
+        Comment comment = new Comment(bug, developer, "Note to self");
+        assertThat(service(true).commentEmails(comment)).isEmpty();
+    }
+
+    @Test
+    void statusChangeEventSendsTheEmail() {
+        when(bugs.findById(8L)).thenReturn(Optional.of(bug));
+        when(users.findById(3L)).thenReturn(Optional.of(developer));
+        when(mailSenderProvider.getIfAvailable()).thenReturn(mailSender);
+
+        service(true).onStatusChanged(new BugStatusChangedEvent(8L, BugStatus.IN_PROGRESS, BugStatus.FIXED, 3L));
+
+        ArgumentCaptor<SimpleMailMessage> sent = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender).send(sent.capture());
+        assertThat(sent.getValue().getTo()).containsExactly("tester@example.com");
+    }
+
     private NotificationService service(boolean enabled) {
-        return new NotificationService(bugs, users, mailSenderProvider, enabled,
+        NotificationService service = new NotificationService(bugs, users, comments, mailSenderProvider, enabled,
                 "BugTrack <no-reply@example.com>", "https://bugs.example.com/");
+        service.retryDelaysMs = new long[]{0, 0}; // retry immediately in tests
+        return service;
     }
 
     private static User user(Long id, String name, String email, Role role) {

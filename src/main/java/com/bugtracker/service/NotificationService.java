@@ -1,8 +1,12 @@
 package com.bugtracker.service;
 
+import com.bugtracker.config.AsyncConfig;
 import com.bugtracker.entity.Bug;
+import com.bugtracker.entity.BugStatus;
+import com.bugtracker.entity.Comment;
 import com.bugtracker.entity.User;
 import com.bugtracker.repository.BugRepository;
+import com.bugtracker.repository.CommentRepository;
 import com.bugtracker.repository.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,11 +22,18 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 
 /**
- * Sends email notifications. Emails go out only after the assignment has been committed, on a background
- * thread, and a mail failure is logged rather than reported to the user.
+ * Sends email notifications about bugs. Emails go out only after the change has been committed, on a
+ * background thread, and a mail failure is logged rather than reported to the user.
+ * <p>
+ * Recipients never include the person who made the change, disabled accounts, or anyone who can no
+ * longer see the bug, and nobody receives the same email twice.
  */
 @Service
 public class NotificationService {
@@ -31,24 +42,31 @@ public class NotificationService {
 
     private final BugRepository bugs;
     private final UserRepository users;
+    private final CommentRepository comments;
     private final ObjectProvider<JavaMailSender> mailSender;
     private final boolean enabled;
     private final String from;
     private final String baseUrl;
 
-    public NotificationService(BugRepository bugs, UserRepository users, ObjectProvider<JavaMailSender> mailSender,
+    /** Waits before each retry of a failed send; after the last one the email is given up and logged. */
+    long[] retryDelaysMs = {2_000, 5_000};
+
+    public NotificationService(BugRepository bugs, UserRepository users, CommentRepository comments,
+                               ObjectProvider<JavaMailSender> mailSender,
                                @Value("${app.mail.enabled:false}") boolean enabled,
                                @Value("${app.mail.from:no-reply@bugtrack.local}") String from,
                                @Value("${app.base-url:http://localhost:8080}") String baseUrl) {
         this.bugs = bugs;
         this.users = users;
+        this.comments = comments;
         this.mailSender = mailSender;
         this.enabled = enabled;
         this.from = from;
         this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
     }
 
-    @Async
+    /** The assigned developer is told about the bug, with its full details. */
+    @Async(AsyncConfig.MAIL_EXECUTOR)
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
     public void onBugAssigned(BugAssignedEvent event) {
@@ -58,32 +76,132 @@ public class NotificationService {
             return;
         }
         User assignedBy = event.assignedById() == null ? null : users.findById(event.assignedById()).orElse(null);
-        send(assignmentEmail(bug, assignee, assignedBy));
+        for (User recipient : recipients(bug, assignedBy, assignee)) {
+            send(assignmentEmail(bug, recipient, assignedBy));
+        }
+    }
+
+    /**
+     * Fixed: the reporter is asked to retest. Returned, closed or reopened: the assigned developer is told.
+     * Starting work sends nothing.
+     */
+    @Async(AsyncConfig.MAIL_EXECUTOR)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
+    public void onStatusChanged(BugStatusChangedEvent event) {
+        Bug bug = bugs.findById(event.bugId()).orElse(null);
+        if (bug == null) {
+            return;
+        }
+        User actor = event.changedById() == null ? null : users.findById(event.changedById()).orElse(null);
+        for (SimpleMailMessage message : statusEmails(bug, event.from(), event.to(), actor)) {
+            send(message);
+        }
+    }
+
+    /** The reporter and the assigned developer receive the comment. */
+    @Async(AsyncConfig.MAIL_EXECUTOR)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
+    public void onCommentAdded(CommentAddedEvent event) {
+        Comment comment = comments.findById(event.commentId()).orElse(null);
+        if (comment == null) {
+            return;
+        }
+        for (SimpleMailMessage message : commentEmails(comment)) {
+            send(message);
+        }
     }
 
     SimpleMailMessage assignmentEmail(Bug bug, User assignee, User assignedBy) {
-        String link = baseUrl + "/#bug-" + bug.getId();
+        return bugEmail(bug, assignee, bug.getStatus(),
+                "Bug #" + bug.getId() + " assigned to you",
+                name(assignedBy, "An administrator") + " assigned bug #" + bug.getId() + " to you.",
+                true, "a bug in BugTrack was assigned to you");
+    }
+
+    List<SimpleMailMessage> statusEmails(Bug bug, BugStatus from, BugStatus to, User actor) {
+        String who = name(actor, "Someone");
+        String id = "#" + bug.getId();
+        String reasonAssignee = "you are assigned to this bug";
+        if (to == BugStatus.FIXED) {
+            return recipients(bug, actor, bug.getReportedBy()).stream().map(r -> bugEmail(bug, r, to,
+                    "Bug " + id + " is fixed and ready for testing",
+                    who + " marked bug " + id + " as fixed. Please retest it, then close it, or return it to the "
+                            + "developer if the problem is still there.",
+                    false, "you reported this bug")).toList();
+        }
+        if (from == BugStatus.FIXED && to == BugStatus.IN_PROGRESS) {
+            return recipients(bug, actor, bug.getAssignedTo()).stream().map(r -> bugEmail(bug, r, to,
+                    "Bug " + id + " was returned to you",
+                    who + " retested bug " + id + " and returned it to you: the problem is still there.",
+                    false, reasonAssignee)).toList();
+        }
+        if (to == BugStatus.CLOSED) {
+            return recipients(bug, actor, bug.getAssignedTo()).stream().map(r -> bugEmail(bug, r, to,
+                    "Bug " + id + " was verified and closed",
+                    who + " verified the fix and closed bug " + id + ".",
+                    false, reasonAssignee)).toList();
+        }
+        if (from == BugStatus.CLOSED && to == BugStatus.OPEN) {
+            return recipients(bug, actor, bug.getAssignedTo()).stream().map(r -> bugEmail(bug, r, to,
+                    "Bug " + id + " was reopened",
+                    who + " reopened bug " + id + ".",
+                    false, reasonAssignee)).toList();
+        }
+        return List.of();
+    }
+
+    List<SimpleMailMessage> commentEmails(Comment comment) {
+        Bug bug = comment.getBug();
+        User author = comment.getUser();
+        String quoted = "  " + comment.getCommentText().strip().replace("\n", "\n  ");
+        return recipients(bug, author, bug.getReportedBy(), bug.getAssignedTo()).stream().map(r -> bugEmail(bug, r, bug.getStatus(),
+                "New comment on bug #" + bug.getId(),
+                author.getName() + " commented on bug #" + bug.getId() + ":\n\n" + quoted,
+                false, "you reported or are assigned to this bug")).toList();
+    }
+
+    /** The candidates minus the actor, missing or disabled users, people who can't see the bug, and duplicates. */
+    private static List<User> recipients(Bug bug, User actor, User... candidates) {
+        List<User> result = new ArrayList<>();
+        for (User u : Arrays.stream(candidates).filter(Objects::nonNull).toList()) {
+            boolean isActor = actor != null && u.getId().equals(actor.getId());
+            boolean duplicate = result.stream().anyMatch(r -> r.getId().equals(u.getId()));
+            if (!isActor && !duplicate && u.isEnabled() && BugPermissions.canView(u, bug)) {
+                result.add(u);
+            }
+        }
+        return result;
+    }
+
+    private SimpleMailMessage bugEmail(Bug bug, User recipient, BugStatus status, String subject, String intro,
+                                       boolean fullDetails, String reason) {
         StringBuilder body = new StringBuilder()
-                .append("Hi ").append(assignee.getName()).append(",\n\n")
-                .append(assignedBy != null ? assignedBy.getName() : "An administrator")
-                .append(" assigned bug #").append(bug.getId()).append(" to you.\n\n")
+                .append("Hi ").append(recipient.getName()).append(",\n\n")
+                .append(intro).append("\n\n")
                 .append("  ").append(bug.getTitle()).append("\n")
                 .append("  Project:     ").append(bug.getProject().getProjectName()).append("\n")
                 .append("  Priority:    ").append(label(bug.getPriority().name())).append("\n")
                 .append("  Severity:    ").append(label(bug.getSeverity().name())).append("\n")
-                .append("  Status:      ").append(label(bug.getStatus().name())).append("\n")
+                .append("  Status:      ").append(label(status.name())).append("\n")
                 .append("  Reported by: ").append(bug.getReportedBy().getName()).append("\n");
-        appendSection(body, "Description", bug.getDescription());
-        appendSection(body, "Steps to reproduce", bug.getStepsToReproduce());
-        appendSection(body, "Expected result", bug.getExpectedResult());
-        appendSection(body, "Actual result", bug.getActualResult());
-        body.append("\nOpen the bug: ").append(link).append("\n\n")
-                .append("-- \nYou received this email because a bug in BugTrack was assigned to you.\n");
+        if (bug.getAssignedTo() != null) {
+            body.append("  Assigned to: ").append(bug.getAssignedTo().getName()).append("\n");
+        }
+        if (fullDetails) {
+            appendSection(body, "Description", bug.getDescription());
+            appendSection(body, "Steps to reproduce", bug.getStepsToReproduce());
+            appendSection(body, "Expected result", bug.getExpectedResult());
+            appendSection(body, "Actual result", bug.getActualResult());
+        }
+        body.append("\nOpen the bug: ").append(baseUrl).append("/#bug-").append(bug.getId()).append("\n\n")
+                .append("-- \nYou received this email because ").append(reason).append(".\n");
 
         SimpleMailMessage message = new SimpleMailMessage();
         message.setFrom(from);
-        message.setTo(assignee.getEmail());
-        message.setSubject("[BugTrack] Bug #" + bug.getId() + " assigned to you: " + bug.getTitle());
+        message.setTo(recipient.getEmail());
+        message.setSubject("[BugTrack] " + subject + ": " + bug.getTitle());
         message.setText(body.toString());
         return message;
     }
@@ -100,12 +218,29 @@ public class NotificationService {
             log.warn("No mail server is configured; email to {} was not sent", to);
             return;
         }
-        try {
-            sender.send(message);
-            log.info("Sent email to {}: {}", to, message.getSubject());
-        } catch (MailException e) {
-            log.warn("Could not send email to {}: {}", to, e.getMessage());
+        for (int attempt = 0; ; attempt++) {
+            try {
+                sender.send(message);
+                log.info("Sent email to {}: {}", to, message.getSubject());
+                return;
+            } catch (MailException e) {
+                if (attempt >= retryDelaysMs.length) {
+                    log.warn("Could not send email to {} after {} attempts: {}", to, attempt + 1, e.getMessage());
+                    return;
+                }
+                log.info("Sending email to {} failed ({}); retrying in {} ms", to, e.getMessage(), retryDelaysMs[attempt]);
+                try {
+                    Thread.sleep(retryDelaysMs[attempt]);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+            }
         }
+    }
+
+    private static String name(User user, String fallback) {
+        return user != null ? user.getName() : fallback;
     }
 
     private static void appendSection(StringBuilder body, String heading, String text) {

@@ -6,7 +6,10 @@ import com.bugtracker.entity.User;
 import com.bugtracker.repository.ProjectRepository;
 import com.bugtracker.repository.UserRepository;
 import com.bugtracker.security.AppUserDetails;
+import com.bugtracker.entity.BugStatus;
 import com.bugtracker.service.BugAssignedEvent;
+import com.bugtracker.service.BugStatusChangedEvent;
+import com.bugtracker.service.CommentAddedEvent;
 import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -288,6 +291,22 @@ class BugApiIntegrationTest {
                 .andExpect(status().isForbidden());
         mvc.perform(get("/api/bugs/999999/assignments").with(as(admin)))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void statusChangesAndCommentsTriggerNotifications() throws Exception {
+        long bugId = createBug("Slow login", "HIGH", "MAJOR");
+        assign(bugId, developer.getId());
+        mvc.perform(patch("/api/bugs/" + bugId + "/status").with(as(developer)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"IN_PROGRESS\"}"))
+                .andExpect(status().isOk());
+        mvc.perform(post("/api/bugs/" + bugId + "/comments").with(as(developer)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"commentText\":\"Looking into it\"}"))
+                .andExpect(status().isCreated());
+
+        assertThat(applicationEvents.stream(BugStatusChangedEvent.class))
+                .containsExactly(new BugStatusChangedEvent(bugId, BugStatus.OPEN, BugStatus.IN_PROGRESS, developer.getId()));
+        assertThat(applicationEvents.stream(CommentAddedEvent.class)).hasSize(1);
     }
 
     @Test

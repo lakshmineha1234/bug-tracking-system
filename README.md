@@ -53,7 +53,7 @@ The interface follows the operating system's light or dark setting by default. T
 - Comments on bugs
 - Dashboard: counts by status, priority, severity, project and assignee, plus recent activity
 - Search and filters (keyword, status, priority, severity, project, assignee), Kanban board, CSV export
-- Email notification to a developer when a bug is assigned to them, with a link that opens the bug
+- Email notifications when a bug is assigned, marked fixed, returned, closed, reopened or commented on, each with a link that opens the bug
 - File attachments on bugs (screenshots, PDFs, logs, CSV, JSON, ZIP; up to 10 MB each) with image previews
 - Light and dark themes, with a toggle in the header
 
@@ -121,7 +121,20 @@ Settings are read from environment variables, so no secrets are stored in the co
 
 ### Email notifications
 
-When an admin assigns a bug to a developer (or reassigns it to a different developer), that developer receives an email with the bug's details and a link such as `http://localhost:8080/#bug-8`, which opens the bug after signing in. Emails are sent in the background after the assignment is saved; if the mail server is unreachable the assignment still succeeds and the failure is logged.
+BugTrack emails the people involved when a bug changes:
+
+| Change | Who is emailed |
+|---|---|
+| Assigned or reassigned | The developer it is assigned to (with the bug's full details) |
+| Marked fixed | The tester who reported it, to retest |
+| Returned (fix failed retest) | The assigned developer |
+| Verified and closed | The assigned developer |
+| Reopened | The assigned developer |
+| New comment | The reporter and the assigned developer |
+
+Nobody is emailed about their own action, disabled accounts and people who can no longer see the bug are skipped, and nobody gets the same email twice. Each email links to the bug, for example `http://localhost:8080/#bug-8`, which opens it after signing in.
+
+Emails are sent in the background after the change is saved, one at a time in the order the changes happened. A failed send is retried twice (after 2 and 5 seconds); if it still fails, the change itself is unaffected and the failure is logged.
 
 Example for Gmail (create an [app password](https://support.google.com/accounts/answer/185833) first), in `application-local.properties`:
 

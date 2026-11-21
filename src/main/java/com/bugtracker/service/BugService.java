@@ -160,6 +160,7 @@ public class BugService {
         bug.setStatus(to);
         bug.touch();
         history.save(new BugHistory(bug, me, from, to));
+        events.publishEvent(new BugStatusChangedEvent(bug.getId(), from, to, me.getId()));
         return toResponse(bug, me);
     }
 
@@ -209,6 +210,7 @@ public class BugService {
         User me = currentUser.get();
         Bug bug = findVisible(bugId, me);
         Comment comment = comments.save(new Comment(bug, me, req.commentText().trim()));
+        events.publishEvent(new CommentAddedEvent(comment.getId()));
         return CommentResponse.from(comment);
     }
 
