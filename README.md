@@ -34,6 +34,11 @@ Admins create projects and manage their members. Testers and developers see only
 
 ![Projects](docs/screenshots/projects.png)
 
+### Reports
+Trends over the last 4 to 52 weeks, time to fix and close, and breakdowns by project and assignee, with PDF and CSV export.
+
+![Reports](docs/screenshots/reports.png)
+
 ### Dark mode
 The interface follows the operating system's light or dark setting by default. The sun/moon button in the header switches theme, and the choice is remembered in the browser.
 
@@ -55,6 +60,7 @@ The interface follows the operating system's light or dark setting by default. T
 - Search and filters (keyword, status, priority, severity, project, assignee), Kanban board, CSV export
 - Email notifications when a bug is assigned, marked fixed, returned, closed, reopened or commented on, each with a link that opens the bug
 - File attachments on bugs (screenshots, PDFs, logs, CSV, JSON, ZIP; up to 10 MB each) with image previews
+- Reports: weekly opened/closed trend, open backlog, time to fix and close, breakdowns by project and assignee, with PDF and CSV export
 - Light and dark themes, with a toggle in the header
 
 ## User roles
@@ -81,11 +87,11 @@ Admins may perform any of these transitions. Every transition is recorded in `bu
 
 ## Technology stack
 
-Java 17+, Spring Boot 3.5 (Web, Data JPA, Security, Validation, Mail), Flyway, MySQL 8, HTML/CSS/JavaScript, Maven, JUnit 5, Mockito, Spring Boot Test (H2 for tests).
+Java 21+, Spring Boot 3.5 (Web, Data JPA, Security, Validation, Mail), Flyway, OpenPDF (PDF reports), MySQL 8, HTML/CSS/JavaScript, Maven, JUnit 5, Mockito, Spring Boot Test (H2 for tests).
 
 ## Prerequisites
 
-- JDK 17 or later (for example Eclipse Temurin 21), with `JAVA_HOME` set
+- JDK 21 or later (for example Eclipse Temurin 21), with `JAVA_HOME` set
 - MySQL Server 8.x running locally
 - Maven is **not** required: the included wrapper (`mvnw.cmd` / `mvnw`) downloads it on first use
 
@@ -175,6 +181,17 @@ Then open http://localhost:8080 and sign in as the admin. The backend serves the
 
 Suggested first steps: create a project, have a tester and a developer register, add them to the project (Projects → Members), report a bug as the tester, assign it as the admin, then work it through the lifecycle.
 
+## Reports
+
+The **Reports** page covers the last 4, 12, 26 or 52 weeks, for all your projects or one of them, using the same access rules as the rest of the app:
+
+- **Headline figures:** bugs opened and closed in the period, bugs open now, and the average and median time to fix (report to first marked fixed) and to close (report to closed)
+- **Charts:** bugs opened vs closed per week, and the open backlog at the end of each week, with hover details
+- **Tables:** totals, open, closed and average time to close by project and by assignee, plus the weekly figures
+- **Export:** a PDF report generated on the server (figures, chart and tables) and a CSV of the weekly figures
+
+Weeks start on Monday. "Open" means not closed (open, in progress, or fixed and awaiting testing). A bug that is closed, reopened and closed again counts each time it was closed in the weekly figures.
+
 ## Attachments
 
 Anyone who can see a bug can view, download and add attachments; only the uploader or an admin can delete one. Allowed types are PNG, JPG, GIF, WebP, PDF, TXT, LOG, CSV, JSON and ZIP, up to 10 MB each. The type is checked from the file's contents, not only its name, so a renamed file is refused, and types a browser could run as a page (such as HTML or SVG) are never accepted. Only images are shown in the browser; everything else is downloaded.
@@ -211,6 +228,8 @@ Files are stored on disk in `ATTACHMENTS_DIR` under random names, while the data
 | GET | `/api/attachments/{id}` | Download a file (`?inline=true` shows an image in the browser) |
 | DELETE | `/api/attachments/{id}` | Delete an attachment (uploader or admin) |
 | GET | `/api/dashboard/summary` | Dashboard statistics |
+| GET | `/api/reports` | Report data. `weeks` (4–52, default 12), optional `projectId` |
+| GET | `/api/reports/pdf` | The same report as a PDF download |
 
 `GET /api/bugs` returns one page: `{content, page, size, totalElements, totalPages}`. Paging and sorting parameters:
 
@@ -261,4 +280,5 @@ bug-tracking-system/
 ## Known limitations and future improvements
 
 - No CORS configuration is needed because the backend serves the frontend from the same origin. If the frontend is ever hosted separately, allow only that origin.
-- Not yet implemented: sprints/releases, PDF reports, GitHub integration.
+- Not yet implemented: sprints/releases, GitHub integration.
+- PDF reports use the standard Helvetica font, which covers Western European characters only; names in other scripts would not print correctly.

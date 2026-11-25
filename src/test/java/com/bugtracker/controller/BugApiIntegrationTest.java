@@ -310,6 +310,58 @@ class BugApiIntegrationTest {
     }
 
     @Test
+    void reportSummarisesTheProjectsBugs() throws Exception {
+        long first = createBug("First", "HIGH", "MAJOR");
+        createBug("Second", "LOW", "MINOR");
+        createBug("Third", "MEDIUM", "MINOR");
+        assign(first, developer.getId());
+        for (String[] step : new String[][]{{"IN_PROGRESS", "dev"}, {"FIXED", "dev"}, {"CLOSED", "tester"}}) {
+            mvc.perform(patch("/api/bugs/" + first + "/status").with(as(step[1].equals("dev") ? developer : tester)).with(csrf())
+                            .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"" + step[0] + "\"}"))
+                    .andExpect(status().isOk());
+        }
+
+        mvc.perform(get("/api/reports").param("weeks", "4").param("projectId", project.getId().toString()).with(as(tester)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.projectName").value("Web App"))
+                .andExpect(jsonPath("$.weekly", hasSize(4)))
+                .andExpect(jsonPath("$.weekly[3].opened").value(3))   // this week
+                .andExpect(jsonPath("$.weekly[3].closed").value(1))
+                .andExpect(jsonPath("$.weekly[3].openAtEnd").value(2))
+                .andExpect(jsonPath("$.totalBugs").value(3))
+                .andExpect(jsonPath("$.openBugs").value(2))
+                .andExpect(jsonPath("$.timeToFix.count").value(1))
+                .andExpect(jsonPath("$.timeToClose.count").value(1))
+                .andExpect(jsonPath("$.byProject[0].name").value("Web App"))
+                .andExpect(jsonPath("$.byAssignee[?(@.name == 'Dev One')].closed").value(1));
+    }
+
+    @Test
+    void reportPdfIsARealPdfWithTheReport() throws Exception {
+        createBug("Printer jams", "HIGH", "MAJOR");
+        byte[] pdf = mvc.perform(get("/api/reports/pdf").param("projectId", project.getId().toString()).with(as(tester)))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Type", "application/pdf"))
+                .andExpect(header().string("Content-Disposition", containsString("bugtrack-report-")))
+                .andReturn().getResponse().getContentAsByteArray();
+
+        assertThat(new String(pdf, 0, 5, java.nio.charset.StandardCharsets.US_ASCII)).isEqualTo("%PDF-");
+        org.openpdf.text.pdf.PdfReader reader = new org.openpdf.text.pdf.PdfReader(pdf);
+        String text = new org.openpdf.text.pdf.parser.PdfTextExtractor(reader).getTextFromPage(1);
+        assertThat(text).contains("BugTrack report").contains("Project: Web App").contains("Opened in period");
+    }
+
+    @Test
+    void reportRulesAreEnforced() throws Exception {
+        mvc.perform(get("/api/reports").param("weeks", "3").with(as(tester))).andExpect(status().isBadRequest());
+        mvc.perform(get("/api/reports").param("weeks", "53").with(as(tester))).andExpect(status().isBadRequest());
+        mvc.perform(get("/api/reports").param("projectId", "999999").with(as(tester))).andExpect(status().isNotFound());
+        mvc.perform(get("/api/reports").param("projectId", project.getId().toString()).with(as(otherDeveloper)))
+                .andExpect(status().isForbidden()); // not a member of the project
+        mvc.perform(get("/api/reports")).andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void developersCannotReportBugs() throws Exception {
         mvc.perform(post("/api/bugs").with(as(developer)).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON).content(bugJson("Crash", "HIGH", "MAJOR", project.getId())))

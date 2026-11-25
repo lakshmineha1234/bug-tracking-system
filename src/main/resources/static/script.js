@@ -157,8 +157,8 @@ async function refreshReferenceData() {
 }
 
 /* ---------- Rendering ---------- */
-const VIEWS = { dashboard: dashboardView, board: boardView, list: listView, projects: projectsView, users: usersView };
-const BINDERS = { board: bindBoard, list: bindList, projects: bindProjects, users: bindUsers };
+const VIEWS = { dashboard: dashboardView, board: boardView, list: listView, projects: projectsView, reports: reportsView, users: usersView };
+const BINDERS = { board: bindBoard, list: bindList, projects: bindProjects, reports: bindReports, users: bindUsers };
 
 async function render() {
   if (!me) return;
@@ -383,6 +383,190 @@ async function exportCSV() {
   a.download = "bugs.csv";
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+/* Reports */
+const REPORT_PERIODS = [4, 12, 26, 52];
+let reportFilters = { weeks: 12, projectId: "" };
+let lastReport = null;
+
+const shortDate = d => new Date(d + "T00:00:00").toLocaleDateString(undefined, { day: "numeric", month: "short" });
+const longDate = d => new Date(d + "T00:00:00").toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+const days = v => v == null ? "–" : `${v.toFixed(1)} d`;
+
+function reportQuery() {
+  const p = new URLSearchParams({ weeks: reportFilters.weeks });
+  if (reportFilters.projectId) p.set("projectId", reportFilters.projectId);
+  return p;
+}
+
+// A round axis maximum with about four gridlines; counts are whole numbers.
+function axisScale(max) {
+  if (max <= 4) return { step: 1, max: 4 };
+  const raw = max / 4, mag = 10 ** Math.floor(Math.log10(raw));
+  const step = [1, 2, 5, 10].map(c => c * mag).find(s => s >= raw);
+  return { step, max: Math.ceil(max / step) * step };
+}
+
+const CHART = { w: 560, h: 250, l: 34, r: 14, t: 22, b: 28 };
+
+// Gridlines, y labels and x labels shared by both charts.
+function chartFrame(weeks, scale) {
+  const pw = CHART.w - CHART.l - CHART.r, ph = CHART.h - CHART.t - CHART.b;
+  const y = v => CHART.t + ph - ph * v / scale.max;
+  const gw = pw / weeks.length;
+  const cx = i => CHART.l + gw * i + gw / 2;
+  let svg = "";
+  for (let v = 0; v <= scale.max; v += scale.step) {
+    svg += `<line x1="${CHART.l}" x2="${CHART.l + pw}" y1="${y(v)}" y2="${y(v)}" stroke="var(${v === 0 ? "--chart-axis" : "--chart-grid"})" stroke-width="1"/>
+      <text x="${CHART.l - 6}" y="${y(v) + 4}" text-anchor="end">${v}</text>`;
+  }
+  const every = Math.max(1, Math.ceil(weeks.length / 8));
+  weeks.forEach((w, i) => {
+    const last = weeks.length - 1;
+    if (i === last || (i % every === 0 && last - i >= every)) { // keep labels apart from the last one
+      svg += `<text x="${cx(i)}" y="${CHART.h - 8}" text-anchor="middle">${esc(shortDate(w.weekStart))}</text>`;
+    }
+  });
+  const hits = weeks.map((w, i) =>
+    `<rect class="hit" data-i="${i}" x="${CHART.l + gw * i}" y="${CHART.t}" width="${gw}" height="${ph}"/>`).join("");
+  return { svg, hits, y, cx, gw };
+}
+
+// Bar with its top corners rounded and its base square on the axis.
+function barPath(x, top, w, base) {
+  const h = base - top;
+  if (h <= 0) return "";
+  const r = Math.min(4, w / 2, h);
+  return `<path d="M${x},${base} V${top + r} Q${x},${top} ${x + r},${top} H${x + w - r} Q${x + w},${top} ${x + w},${top + r} V${base} Z"`;
+}
+
+function openedClosedChart(weeks) {
+  const scale = axisScale(Math.max(...weeks.map(w => Math.max(w.opened, w.closed)), 0));
+  const f = chartFrame(weeks, scale);
+  const base = f.y(0);
+  const bw = Math.max(2, Math.min(14, (f.gw - 8) / 2));
+  let bars = "";
+  weeks.forEach((w, i) => {
+    const x = f.cx(i);
+    bars += (barPath(x - bw - 1, f.y(w.opened), bw, base) || "<path") + ` fill="var(--series-1)"/>`;
+    bars += (barPath(x + 1, f.y(w.closed), bw, base) || "<path") + ` fill="var(--series-2)"/>`;
+  });
+  // Selective direct labels: the latest week's two values.
+  const last = weeks.length - 1, lw = weeks[last];
+  const labels = `<text class="value-label" x="${f.cx(last) - bw / 2 - 1}" y="${f.y(lw.opened) - 5}" text-anchor="middle">${lw.opened}</text>
+    <text class="value-label" x="${f.cx(last) + bw / 2 + 1}" y="${f.y(lw.closed) - 5}" text-anchor="middle">${lw.closed}</text>`;
+  const total = (k) => weeks.reduce((s, w) => s + w[k], 0);
+  return `<div class="chart-legend"><span><i style="background:var(--series-1)"></i>Opened</span><span><i style="background:var(--series-2)"></i>Closed</span></div>
+    <div class="chart-wrap" data-chart="oc">
+      <svg viewBox="0 0 ${CHART.w} ${CHART.h}" role="img" aria-label="Bugs opened and closed per week: ${total("opened")} opened and ${total("closed")} closed over ${weeks.length} weeks">
+        ${f.svg}${bars}${labels}${f.hits}</svg>
+      <div class="chart-tip"></div></div>`;
+}
+
+function backlogChart(weeks) {
+  const scale = axisScale(Math.max(...weeks.map(w => w.openAtEnd), 0));
+  const f = chartFrame(weeks, scale);
+  const pts = weeks.map((w, i) => `${f.cx(i)},${f.y(w.openAtEnd)}`).join(" ");
+  const last = weeks.length - 1;
+  return `<div class="chart-wrap" data-chart="backlog">
+      <svg viewBox="0 0 ${CHART.w} ${CHART.h}" role="img" aria-label="Open bugs at the end of each week, now ${weeks[last].openAtEnd}">
+        ${f.svg}
+        <polyline points="${pts}" fill="none" stroke="var(--series-1)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+        <circle cx="${f.cx(last)}" cy="${f.y(weeks[last].openAtEnd)}" r="4" fill="var(--series-1)" stroke="var(--surface)" stroke-width="2"/>
+        <text class="value-label" x="${f.cx(last)}" y="${f.y(weeks[last].openAtEnd) - 9}" text-anchor="end">${weeks[last].openAtEnd} now</text>
+        <line class="crosshair" y1="${CHART.t}" y2="${f.y(0)}" stroke="var(--chart-axis)" stroke-width="1" visibility="hidden"/>
+        <circle class="hover-dot" r="4" fill="var(--series-1)" stroke="var(--surface)" stroke-width="2" visibility="hidden"/>
+        ${f.hits}</svg>
+      <div class="chart-tip"></div></div>`;
+}
+
+function groupTable(title, nameHeader, groups) {
+  return `<div class="card"><h3>${title}</h3>${groups.length ? `<div class="table-wrap"><table>
+    <thead><tr><th>${nameHeader}</th><th class="num">Total</th><th class="num">Open</th><th class="num">Closed</th><th class="num">Avg time to close</th></tr></thead>
+    <tbody>${groups.map(g => `<tr><td>${esc(g.name)}</td><td class="num">${g.total}</td><td class="num">${g.open}</td>
+      <td class="num">${g.closed}</td><td class="num">${days(g.averageDaysToClose)}</td></tr>`).join("")}</tbody></table></div>`
+    : `<p class="muted">No bugs.</p>`}</div>`;
+}
+
+async function reportsView() {
+  const r = await api("GET", "/api/reports?" + reportQuery());
+  lastReport = r;
+  const median = s => s.medianDays == null ? "" : `<div class="sub">median ${days(s.medianDays)} · ${s.count} bug${s.count === 1 ? "" : "s"}</div>`;
+  const tiles = [
+    [r.openedInPeriod, "Opened in period", ""],
+    [r.closedInPeriod, "Closed in period", ""],
+    [r.openBugs, `Open now (of ${r.totalBugs})`, ""],
+    [days(r.timeToFix.averageDays), "Average time to fix", median(r.timeToFix)],
+    [days(r.timeToClose.averageDays), "Average time to close", median(r.timeToClose)]
+  ];
+  return `<h2>Reports</h2>
+  <div class="toolbar">
+    <select id="rWeeks" aria-label="Period">${opts(REPORT_PERIODS, reportFilters.weeks, null, w => `Last ${w} weeks`)}</select>
+    <select id="rProject" aria-label="Project">${opts(projects.map(p => p.id), reportFilters.projectId, "All my projects",
+      id => projects.find(p => p.id == id).projectName)}</select>
+    <span class="spacer"></span>
+    <a class="btn" href="/api/reports/pdf?${reportQuery()}" download>Download PDF</a>
+    <button class="btn" id="rCsv">Download CSV</button>
+  </div>
+  <p class="muted report-note">${longDate(r.from)} to ${longDate(r.to)} · weeks start on Monday · “open” means not closed · a bug closed, reopened and closed again counts each time it was closed</p>
+  <div class="grid stats">${tiles.map(([n, l, sub]) => `<div class="card stat"><div class="n">${n}</div><div class="l">${l}</div>${sub}</div>`).join("")}</div>
+  <div class="grid charts" style="margin-top:16px">
+    <div class="card"><h3>Bugs opened and closed per week</h3>${openedClosedChart(r.weekly)}</div>
+    <div class="card"><h3>Open bugs at the end of each week</h3>${backlogChart(r.weekly)}</div>
+  </div>
+  <div class="grid charts" style="margin-top:16px">
+    ${groupTable("By project", "Project", r.byProject)}
+    ${groupTable("By assignee", "Assignee", r.byAssignee)}
+  </div>
+  <details class="card" style="margin-top:16px"><summary>Weekly figures (table)</summary>
+    <div class="table-wrap"><table><thead><tr><th>Week starting</th><th class="num">Opened</th><th class="num">Closed</th><th class="num">Open at end</th></tr></thead>
+    <tbody>${r.weekly.map(w => `<tr><td>${esc(longDate(w.weekStart))}</td><td class="num">${w.opened}</td><td class="num">${w.closed}</td><td class="num">${w.openAtEnd}</td></tr>`).join("")}</tbody></table></div>
+  </details>`;
+}
+
+function bindReports() {
+  $("rWeeks").onchange = e => { reportFilters.weeks = Number(e.target.value); render(); };
+  $("rProject").onchange = e => { reportFilters.projectId = e.target.value; render(); };
+  $("rCsv").onclick = () => {
+    const rows = [["week_starting", "opened", "closed", "open_at_end"], ...lastReport.weekly.map(w => [w.weekStart, w.opened, w.closed, w.openAtEnd])];
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([rows.map(r => r.join(",")).join("\n")], { type: "text/csv" }));
+    a.download = `bugtrack-weekly-${lastReport.to}.csv`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+  // Hover: a tooltip per week on both charts; the backlog chart also shows a crosshair and dot.
+  document.querySelectorAll(".chart-wrap").forEach(wrap => {
+    const tip = wrap.querySelector(".chart-tip");
+    const svg = wrap.querySelector("svg");
+    const backlog = wrap.dataset.chart === "backlog";
+    wrap.querySelectorAll(".hit").forEach(hit => {
+      hit.addEventListener("mousemove", ev => {
+        const w = lastReport.weekly[Number(hit.dataset.i)];
+        tip.innerHTML = `<b>Week of ${esc(longDate(w.weekStart))}</b>` + (backlog
+          ? `<i style="background:var(--series-1)"></i>Open at end: ${w.openAtEnd}`
+          : `<i style="background:var(--series-1)"></i>Opened: ${w.opened}<br><i style="background:var(--series-2)"></i>Closed: ${w.closed}`);
+        tip.style.display = "block";
+        const box = wrap.getBoundingClientRect();
+        const x = ev.clientX - box.left, y = ev.clientY - box.top;
+        tip.style.left = `${Math.min(x + 12, box.width - tip.offsetWidth - 4)}px`;
+        tip.style.top = `${Math.max(0, y - tip.offsetHeight - 10)}px`;
+        if (backlog) {
+          const cx = Number(hit.getAttribute("x")) + Number(hit.getAttribute("width")) / 2;
+          const scale = axisScale(Math.max(...lastReport.weekly.map(k => k.openAtEnd), 0));
+          const cy = CHART.t + (CHART.h - CHART.t - CHART.b) * (1 - w.openAtEnd / scale.max);
+          const line = svg.querySelector(".crosshair"), dot = svg.querySelector(".hover-dot");
+          line.setAttribute("x1", cx); line.setAttribute("x2", cx); line.setAttribute("visibility", "visible");
+          dot.setAttribute("cx", cx); dot.setAttribute("cy", cy); dot.setAttribute("visibility", "visible");
+        }
+      });
+      hit.addEventListener("mouseleave", () => {
+        tip.style.display = "none";
+        if (backlog) svg.querySelectorAll(".crosshair, .hover-dot").forEach(el => el.setAttribute("visibility", "hidden"));
+      });
+    });
+  });
 }
 
 /* Projects */

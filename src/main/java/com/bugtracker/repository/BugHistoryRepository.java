@@ -11,4 +11,6 @@ public interface BugHistoryRepository extends JpaRepository<BugHistory, Long> {
     List<BugHistory> findByBugIdOrderByIdAsc(Long bugId);
 
     List<BugHistory> findTop10ByBugIdInOrderByIdDesc(Collection<Long> bugIds);
+
+    List<BugHistory> findByBugIdInOrderByIdAsc(Collection<Long> bugIds);
 }
