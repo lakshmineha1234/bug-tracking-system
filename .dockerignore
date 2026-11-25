@@ -1,0 +1,15 @@
+# Keep the image small and never copy local secrets or data into it.
+.git
+.github
+.claude
+.mvn
+target
+data
+docs
+prototype
+scripts
+*.cmd
+mvnw
+application-local.properties
+application-local.properties.example
+*.md

@@ -48,6 +48,12 @@ public class AuthController {
         return Map.of("headerName", token.getHeaderName(), "token", token.getToken());
     }
 
+    /** Public settings the sign-in screen needs, such as whether sign-up is open. */
+    @GetMapping("/settings")
+    public Map<String, Object> settings() {
+        return Map.of("registrationEnabled", userService.isRegistrationEnabled());
+    }
+
     @PostMapping("/register")
     @ResponseStatus(HttpStatus.CREATED)
     public UserResponse register(@Valid @RequestBody RegisterRequest req) {

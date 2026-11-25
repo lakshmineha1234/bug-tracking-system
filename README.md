@@ -123,6 +123,8 @@ Settings are read from environment variables, so no secrets are stored in the co
 | `MAIL_SMTP_AUTH` / `MAIL_STARTTLS` | `false` / `false` | Set both to `true` for most hosted mail services |
 | `MAIL_FROM` | `BugTrack <no-reply@bugtrack.local>` | Sender address |
 | `APP_BASE_URL` | `http://localhost:8080` | Address used for links in emails |
+| `REGISTRATION_ENABLED` | `true` | Allow public sign-up. Set to `false` for invitation-only: admins then add users on the Users page |
+| `SPRING_PROFILES_ACTIVE` | *(none)* | `prod` turns on the production settings (secure cookies, HTTPS behind a proxy, attachments in `/data`). The Docker image sets it |
 | `ATTACHMENTS_DIR` | `data/attachments` | Folder where attachment files are stored (relative to the folder the app starts in) |
 
 ### Email notifications
@@ -251,6 +253,44 @@ Errors are returned as JSON: `{timestamp, status, error, message, fieldErrors}`.
 
 To call the API from Postman: `GET /api/auth/csrf`, then send the token in the `X-CSRF-TOKEN` header on every POST/PUT/PATCH/DELETE (Postman keeps the session cookie).
 
+## Deploying
+
+BugTrack ships as a Docker image (`Dockerfile`) that runs the production settings in `src/main/resources/application-prod.properties`. It needs a MySQL 8 database, a persistent disk for attachments, and HTTPS in front of it. The health check is at `/actuator/health`.
+
+Every push is checked by GitHub Actions: besides the tests, it builds the image and runs it against a MySQL 8.4 database to confirm the app starts, applies its migrations and serves the page.
+
+### Railway, step by step
+
+[Railway](https://railway.com) runs Docker images and offers MySQL and persistent disks. It is not free: new accounts get a trial credit, then the Hobby plan is about $5/month (check their pricing page).
+
+1. **Create a project from this repository.** In Railway: *New Project → Deploy from GitHub repo* → choose your copy of this repository. Railway finds the `Dockerfile` and builds it. The first deploy will fail until steps 2–4 are done; that is expected.
+2. **Add the database.** In the project: *New → Database → MySQL*. Keep the service name `MySQL` (the variables below refer to it). Recommended: in the MySQL service's settings, set its source image to `mysql:8.4`, the version BugTrack is tested with.
+3. **Set the app's variables** (app service → *Variables*). The `${{...}}` references are filled in by Railway:
+
+   | Variable | Value |
+   |---|---|
+   | `DB_URL` | `jdbc:mysql://${{MySQL.MYSQLHOST}}:${{MySQL.MYSQLPORT}}/${{MySQL.MYSQLDATABASE}}` |
+   | `DB_USERNAME` | `${{MySQL.MYSQLUSER}}` |
+   | `DB_PASSWORD` | `${{MySQL.MYSQLPASSWORD}}` |
+   | `BUGTRACK_ADMIN_EMAIL` | the first admin's email |
+   | `BUGTRACK_ADMIN_PASSWORD` | a strong password (at least 8 characters) for that admin |
+   | `APP_BASE_URL` | `https://${{RAILWAY_PUBLIC_DOMAIN}}` (used for links in emails) |
+   | `REGISTRATION_ENABLED` | `false` to make accounts invitation-only (recommended for a public site) |
+   | `RAILWAY_RUN_UID` | `0`. Railway mounts disks as the root user, and the app's image runs as a non-root user, so without this setting attachments cannot be saved |
+
+4. **Add a disk for attachments.** App service → *Volumes* (or right-click the service → *Attach volume*), mount path **`/data`**.
+5. **Make it reachable.** App service → *Settings → Networking → Generate domain*, target port **8080**.
+6. **Health check.** App service → *Settings → Deploy → Healthcheck path*: `/actuator/health`.
+7. **Deploy** (or redeploy). Open the generated `https://….up.railway.app` address and sign in as the admin from step 3. Then create projects and add users on the Users page.
+
+**Email (optional).** Without mail settings, notification emails are only written to the app's log. To send real email, also set `MAIL_ENABLED=true`, `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_SMTP_AUTH=true`, `MAIL_STARTTLS=true` and `MAIL_FROM` (see [Email notifications](#email-notifications); for Gmail, use an app password).
+
+**Backups.** The database and the attachments disk hold all your data. Use Railway's backup options for both, or your own `mysqldump`.
+
+### Other hosts
+
+Any host that runs Docker images works the same way: set the `DB_*`, `BUGTRACK_ADMIN_*` and `APP_BASE_URL` variables, mount persistent storage at `/data`, put HTTPS in front, and point the health check at `/actuator/health`. The app listens on port 8080, or on `PORT` if the host sets it.
+
 ## Running the tests
 
 ```powershell
@@ -285,5 +325,6 @@ bug-tracking-system/
 ## Known limitations and future improvements
 
 - No CORS configuration is needed because the backend serves the frontend from the same origin. If the frontend is ever hosted separately, allow only that origin.
-- Not yet implemented: sprints/releases, GitHub integration.
+- Not yet implemented: sprints/releases, GitHub integration, and users changing their own password or resetting a forgotten one (an admin sets the initial password).
+- There is no limit on repeated sign-in attempts; on a public site, consider adding rate limiting.
 - PDF reports use the standard Helvetica font, which covers Western European characters only; names in other scripts would not print correctly.

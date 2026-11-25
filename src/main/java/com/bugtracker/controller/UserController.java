@@ -1,6 +1,11 @@
 package com.bugtracker.controller;
 
+import com.bugtracker.dto.RegisterRequest;
 import com.bugtracker.dto.UpdateUserRequest;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import com.bugtracker.dto.UserResponse;
 import com.bugtracker.service.UserService;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -26,6 +31,13 @@ public class UserController {
     @GetMapping
     public List<UserResponse> list() {
         return userService.list();
+    }
+
+    /** Admin creates an account (any role) with an initial password the admin shares with the user. */
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+    public UserResponse create(@Valid @RequestBody RegisterRequest req) {
+        return userService.createByAdmin(req);
     }
 
     @PatchMapping("/{id}")

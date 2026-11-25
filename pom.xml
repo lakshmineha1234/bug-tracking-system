@@ -44,6 +44,11 @@
             <artifactId>spring-boot-starter-mail</artifactId>
         </dependency>
         <dependency>
+            <!-- /actuator/health, used by the hosting provider to check the app is up -->
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
             <!-- PDF report export -->
             <groupId>com.github.librepdf</groupId>
             <artifactId>openpdf</artifactId>

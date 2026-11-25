@@ -91,11 +91,13 @@ async function api(method, url, body) {
 }
 
 /* ---------- Auth screens ---------- */
+let registrationEnabled = true; // from /api/auth/settings at startup
+
 function showAuth(mode) {
   document.body.classList.add("signed-out");
   document.body.classList.remove("is-admin");
   if ($("dlg").open) $("dlg").close();
-  const register = mode === "register";
+  const register = mode === "register" && registrationEnabled;
   $("app").innerHTML = `
   <div class="card auth">
     <h2>${register ? "Create an account" : "Sign in to BugTrack"}</h2>
@@ -110,9 +112,11 @@ function showAuth(mode) {
     </form>
     <div class="switch muted">${register
       ? `Already have an account? <button class="linklike" id="authSwitch">Sign in</button>`
-      : `New here? <button class="linklike" id="authSwitch">Create an account</button>`}</div>
+      : registrationEnabled
+        ? `New here? <button class="linklike" id="authSwitch">Create an account</button>`
+        : "New here? Ask an admin to create an account for you."}</div>
   </div>`;
-  $("authSwitch").onclick = () => showAuth(register ? "login" : "register");
+  if ($("authSwitch")) $("authSwitch").onclick = () => showAuth(register ? "login" : "register");
   $("authForm").onsubmit = async e => {
     e.preventDefault();
     const f = Object.fromEntries(new FormData(e.target));
@@ -668,7 +672,19 @@ async function openMembers(id) {
 async function usersView() {
   allUsers = await api("GET", "/api/users");
   return `<h2>Users</h2>
-  <p class="muted" style="margin-top:-8px">New users register as Tester or Developer. Change roles or disable accounts here.</p>
+  <p class="muted" style="margin-top:-8px">${registrationEnabled
+    ? "People can sign up as Tester or Developer, or you can add them here."
+    : "Sign-up is closed: add people here."} Change roles or disable accounts in the table.</p>
+  <div class="card" style="margin-bottom:16px"><h3>Add user</h3>
+    <form id="newUser" class="toolbar" style="margin:0">
+      <input name="name" placeholder="Name" required maxlength="100" style="flex:1;min-width:150px" autocomplete="off">
+      <input name="email" type="email" placeholder="Email" required maxlength="150" style="flex:1;min-width:180px" autocomplete="off">
+      <input name="password" type="password" placeholder="Initial password (8+ characters)" required minlength="8" maxlength="72"
+        style="flex:1;min-width:200px" autocomplete="new-password">
+      <select name="role" aria-label="Role">${opts(["TESTER", "DEVELOPER", "ADMIN"], "TESTER")}</select>
+      <button class="btn primary">Add</button>
+    </form>
+    <p class="muted" style="margin:8px 0 0;font-size:13px">Share the password with them privately, not by email or chat.</p></div>
   <div class="card table-wrap" style="padding:0"><table>
     <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Active</th><th>Joined</th></tr></thead>
     <tbody>${allUsers.map(u => {
@@ -687,6 +703,15 @@ function bindUsers() {
       toast("User updated");
     } catch (err) { toast(err.message); }
     render();
+  };
+  $("newUser").onsubmit = async e => {
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(e.target));
+    try {
+      await api("POST", "/api/users", f);
+      toast(`Added ${f.name}`);
+      render();
+    } catch (err) { toast(err.message); }
   };
   document.querySelectorAll("[data-role]").forEach(s => s.onchange = () => update(s.dataset.role, { role: s.value }));
   document.querySelectorAll("[data-enabled]").forEach(c => c.onchange = () => update(c.dataset.enabled, { enabled: c.checked }));
@@ -940,6 +965,9 @@ $("logoutBtn").onclick = async () => {
     $("app").innerHTML = `<div class="empty">Cannot reach the BugTrack server.</div>`;
     return;
   }
+  try {
+    registrationEnabled = (await api("GET", "/api/auth/settings")).registrationEnabled;
+  } catch { /* keep the default */ }
   try {
     me = await api("GET", "/api/auth/me");
   } catch {

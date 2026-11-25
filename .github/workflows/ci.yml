@@ -37,3 +37,57 @@ jobs:
           name: test-reports
           path: target/surefire-reports/
           retention-days: 14
+
+  docker:
+    name: Docker image runs against MySQL
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci-root-password
+          MYSQL_DATABASE: bug_tracking_db
+          MYSQL_USER: bugtrack
+          MYSQL_PASSWORD: ci-password
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pci-root-password"
+          --health-interval=5s --health-timeout=5s --health-retries=30
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Build the image
+        run: docker build -t bugtrack:ci .
+
+      # Throwaway values for this test database only; real deployments set their own.
+      - name: Start the app with the production settings
+        run: |
+          docker run -d --name bugtrack --network host \
+            -e DB_URL=jdbc:mysql://127.0.0.1:3306/bug_tracking_db \
+            -e DB_USERNAME=bugtrack -e DB_PASSWORD=ci-password \
+            -e BUGTRACK_ADMIN_EMAIL=admin@ci.test -e BUGTRACK_ADMIN_PASSWORD=ci-admin-password \
+            bugtrack:ci
+
+      - name: Wait for the health check
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:8080/actuator/health | grep -q '"UP"'; then echo "App is up"; exit 0; fi
+            sleep 3
+          done
+          echo "App did not become healthy"; exit 1
+
+      - name: Smoke test
+        run: |
+          curl -fsS http://localhost:8080/ | grep -q "<title>BugTrack</title>"
+          curl -fsS http://localhost:8080/api/auth/settings | grep -q registrationEnabled
+          docker logs bugtrack 2>&1 | grep -q 'The following 1 profile is active: "prod"'
+          docker logs bugtrack 2>&1 | grep -q "Successfully applied 3 migrations"
+          docker logs bugtrack 2>&1 | grep -q "Created admin account admin@ci.test"
+          docker exec bugtrack sh -c 'id -u && touch /data/attachments/write-test && echo "attachments folder is writable"'
+
+      - name: Show app logs
+        if: always()
+        run: docker logs bugtrack || true
