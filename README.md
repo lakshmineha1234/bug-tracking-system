@@ -163,10 +163,15 @@ python -m smtpd -n -c DebuggingServer 127.0.0.1:1025
 
 ## Running
 
-Quick start on Windows: copy `application-local.properties.example` to `application-local.properties` in the project folder and fill in your database password and first admin account (the copy is git-ignored, so your passwords stay local), then:
+Quick start on Windows: copy `application-local.properties.example` to `application-local.properties` in the project folder and fill in your database password and first admin account (the copy is git-ignored, so your passwords stay local), then double-click:
 
-1. `start-mysql.cmd` if MySQL is not already running as a service (uses a data folder under `%USERPROFILE%\.bugtrack-mysql`)
-2. `run.cmd` to start the app on http://localhost:8080
+| File | What it does |
+|---|---|
+| `start.cmd` | Starts MySQL (unless it is already running), the test mail server (only if your local settings use it) and the app, then opens http://localhost:8080. Each runs in its own minimized window, where you can see its log. Anything already running is left alone. |
+| `stop.cmd` | Stops the app and the test mail server, and shuts MySQL down cleanly. A MySQL Windows service is left running (add `-IncludeService` to stop it too). |
+| `install-mysql-service.cmd` | Optional, **run as administrator**: registers MySQL as the Windows service `BugTrackMySQL`, so the database starts with Windows. Add `-Remove` to unregister it; the data is not touched. |
+
+`start.cmd` expects MySQL's data folder at `%USERPROFILE%\.bugtrack-mysql` and MySQL Server under `C:\Program Files\MySQL`. The lower-level `start-mysql.cmd` and `run.cmd` still work on their own.
 
 Or with environment variables in PowerShell:
 
