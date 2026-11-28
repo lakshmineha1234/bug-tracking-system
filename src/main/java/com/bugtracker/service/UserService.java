@@ -13,6 +13,7 @@ import com.bugtracker.exception.ForbiddenException;
 import com.bugtracker.exception.NotFoundException;
 import com.bugtracker.repository.UserRepository;
 import com.bugtracker.security.CurrentUserService;
+import com.bugtracker.security.LoginAttemptLimiter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Sort;
@@ -31,15 +32,17 @@ public class UserService {
     private final PasswordEncoder passwordEncoder;
     private final CurrentUserService currentUser;
     private final ApplicationEventPublisher events;
+    private final LoginAttemptLimiter loginLimiter;
     private final boolean registrationEnabled;
 
     public UserService(UserRepository users, PasswordEncoder passwordEncoder, CurrentUserService currentUser,
-                       ApplicationEventPublisher events,
+                       ApplicationEventPublisher events, LoginAttemptLimiter loginLimiter,
                        @Value("${app.registration.enabled:true}") boolean registrationEnabled) {
         this.users = users;
         this.passwordEncoder = passwordEncoder;
         this.currentUser = currentUser;
         this.events = events;
+        this.loginLimiter = loginLimiter;
         this.registrationEnabled = registrationEnabled;
     }
 
@@ -50,12 +53,15 @@ public class UserService {
     /** The signed-in user changes their own password, confirming the current one first. */
     public void changeOwnPassword(ChangePasswordRequest req) {
         User me = currentUser.get();
+        loginLimiter.checkPasswordChange(me.getId());
         if (!passwordEncoder.matches(req.currentPassword(), me.getPassword())) {
+            loginLimiter.passwordChangeFailed(me.getId());
             throw new BadRequestException("Your current password is incorrect");
         }
         if (passwordEncoder.matches(req.newPassword(), me.getPassword())) {
             throw new BadRequestException("The new password must be different from the current one");
         }
+        loginLimiter.passwordChangeSucceeded(me.getId());
         me.setPassword(passwordEncoder.encode(req.newPassword()));
         events.publishEvent(new PasswordChangedEvent(me.getId(), me.getId()));
     }

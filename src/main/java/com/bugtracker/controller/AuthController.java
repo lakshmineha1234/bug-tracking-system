@@ -5,6 +5,7 @@ import com.bugtracker.dto.LoginRequest;
 import com.bugtracker.dto.RegisterRequest;
 import com.bugtracker.dto.UserResponse;
 import com.bugtracker.exception.UnauthorizedException;
+import com.bugtracker.security.LoginAttemptLimiter;
 import com.bugtracker.service.UserService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -35,12 +36,15 @@ public class AuthController {
     private final AuthenticationManager authenticationManager;
     private final SecurityContextRepository securityContextRepository;
     private final UserService userService;
+    private final LoginAttemptLimiter loginLimiter;
 
     public AuthController(AuthenticationManager authenticationManager,
-                          SecurityContextRepository securityContextRepository, UserService userService) {
+                          SecurityContextRepository securityContextRepository, UserService userService,
+                          LoginAttemptLimiter loginLimiter) {
         this.authenticationManager = authenticationManager;
         this.securityContextRepository = securityContextRepository;
         this.userService = userService;
+        this.loginLimiter = loginLimiter;
     }
 
     /** The frontend calls this first and sends the token in the given header on POST/PUT/PATCH/DELETE requests. */
@@ -64,14 +68,19 @@ public class AuthController {
     @PostMapping("/login")
     public UserResponse login(@Valid @RequestBody LoginRequest req,
                               HttpServletRequest request, HttpServletResponse response) {
+        String email = req.email().trim();
+        String address = request.getRemoteAddr();
+        // Checked before the password, so a locked account or address gets no answer about the password at all.
+        loginLimiter.checkSignIn(email, address);
         Authentication auth;
         try {
-            auth = authenticationManager.authenticate(
-                    UsernamePasswordAuthenticationToken.unauthenticated(req.email().trim(), req.password()));
+            auth = authenticationManager.authenticate(UsernamePasswordAuthenticationToken.unauthenticated(email, req.password()));
         } catch (AuthenticationException e) {
+            loginLimiter.signInFailed(email, address);
             // Same message for unknown email, wrong password and disabled account.
             throw new UnauthorizedException("Invalid email or password");
         }
+        loginLimiter.signInSucceeded(email);
         request.getSession(true);
         request.changeSessionId(); // protects against session fixation
         SecurityContext context = SecurityContextHolder.createEmptyContext();

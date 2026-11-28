@@ -50,6 +50,7 @@ The interface follows the operating system's light or dark setting by default. T
 ## Features
 
 - Registration and login with BCrypt-hashed passwords and session-based authentication
+- Sign-in attempt limiting: repeated failures lock the account or network address for a while (see [Security](#security))
 - Users change their own password (click your name in the header); admins can reset a user's password, and the account owner is emailed whenever their password changes
 - Role-based access (Admin, Tester, Developer), enforced in the backend
 - Projects with members; testers see their projects' bugs, developers see bugs assigned to them
@@ -124,6 +125,9 @@ Settings are read from environment variables, so no secrets are stored in the co
 | `MAIL_SMTP_AUTH` / `MAIL_STARTTLS` | `false` / `false` | Set both to `true` for most hosted mail services |
 | `MAIL_FROM` | `BugTrack <no-reply@bugtrack.local>` | Sender address |
 | `APP_BASE_URL` | `http://localhost:8080` | Address used for links in emails |
+| `LOGIN_MAX_FAILURES_PER_ACCOUNT` | `10` | Failed sign-ins allowed per account within the window before it is locked |
+| `LOGIN_MAX_FAILURES_PER_IP` | `30` | Failed sign-ins allowed per network address within the window before it is blocked |
+| `LOGIN_WINDOW_MINUTES` / `LOGIN_LOCKOUT_MINUTES` | `15` / `15` | Time window for counting failures, and how long a lock lasts |
 | `REGISTRATION_ENABLED` | `true` | Allow public sign-up. Set to `false` for invitation-only: admins then add users on the Users page |
 | `SPRING_PROFILES_ACTIVE` | *(none)* | `prod` turns on the production settings (secure cookies, HTTPS behind a proxy, attachments in `/data`). The Docker image sets it |
 | `ATTACHMENTS_DIR` | `data/attachments` | Folder where attachment files are stored (relative to the folder the app starts in) |
@@ -188,6 +192,12 @@ $env:BUGTRACK_ADMIN_PASSWORD = "choose-a-strong-password"
 Then open http://localhost:8080 and sign in as the admin. The backend serves the frontend, so there is nothing separate to start.
 
 Suggested first steps: create a project, have a tester and a developer register, add them to the project (Projects → Members), report a bug as the tester, assign it as the admin, then work it through the lifecycle.
+
+## Security
+
+- Passwords are stored as BCrypt hashes; sessions use a secure, HttpOnly cookie in production, and every change needs a CSRF token.
+- **Sign-in attempt limiting.** After 10 failed sign-ins within 15 minutes, an account is locked for 15 minutes, from anywhere, and even the right password is refused until then. A network address with 30 failures within 15 minutes is blocked the same way for every account, which stops one machine from trying many accounts. A successful sign-in clears the account's count. Locked and unknown accounts get the same answer (HTTP 429 with a `Retry-After` header), so the limit does not reveal which emails have accounts. Changing a password is limited to 5 wrong current passwords per 15 minutes. All limits are configurable (see [Configuration](#configuration)).
+- Whenever a password changes, the account owner gets an email.
 
 ## Reports
 
@@ -330,5 +340,6 @@ bug-tracking-system/
 
 - No CORS configuration is needed because the backend serves the frontend from the same origin. If the frontend is ever hosted separately, allow only that origin.
 - Not yet implemented: sprints/releases, GitHub integration, and a self-service "forgot password" email (an admin resets forgotten passwords instead).
-- There is no limit on repeated sign-in attempts; on a public site, consider adding rate limiting.
+- Sign-in limits are kept in memory: they reset when the app restarts and apply per app instance, which suits a single server. Someone who knows an email address can also lock that account for 15 minutes by failing on purpose; the admin can still reset the password, and the lock ends on its own.
+- Behind a proxy, the per-address limit relies on the proxy's `X-Forwarded-For` header; a client that can add its own value there can make each attempt appear to come from a different address. The per-account limit is not affected.
 - PDF reports use the standard Helvetica font, which covers Western European characters only; names in other scripts would not print correctly.

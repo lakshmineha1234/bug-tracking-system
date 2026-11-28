@@ -33,6 +33,14 @@ public class GlobalExceptionHandler {
     public record ApiError(Instant timestamp, int status, String error, String message, Map<String, String> fieldErrors) {
     }
 
+    @ExceptionHandler(TooManyRequestsException.class)
+    public ResponseEntity<ApiError> handleTooManyRequests(TooManyRequestsException e) {
+        ResponseEntity<ApiError> response = build(e.getStatus(), e.getMessage(), null);
+        return ResponseEntity.status(response.getStatusCode())
+                .header("Retry-After", String.valueOf(e.getRetryAfterSeconds()))
+                .body(response.getBody());
+    }
+
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<ApiError> handleApi(ApiException e) {
         return build(e.getStatus(), e.getMessage(), null);
