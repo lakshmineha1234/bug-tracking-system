@@ -1,6 +1,8 @@
 package com.bugtracker.controller;
 
 import com.bugtracker.dto.RegisterRequest;
+import com.bugtracker.dto.ResetPasswordRequest;
+import org.springframework.web.bind.annotation.PutMapping;
 import com.bugtracker.dto.UpdateUserRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -38,6 +40,13 @@ public class UserController {
     @ResponseStatus(HttpStatus.CREATED)
     public UserResponse create(@Valid @RequestBody RegisterRequest req) {
         return userService.createByAdmin(req);
+    }
+
+    /** Admin sets a new password for a user (for example after a forgotten password). */
+    @PutMapping("/{id}/password")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void resetPassword(@PathVariable Long id, @Valid @RequestBody ResetPasswordRequest req) {
+        userService.resetPassword(id, req);
     }
 
     @PatchMapping("/{id}")

@@ -228,6 +228,33 @@ class NotificationServiceTest {
     }
 
     @Test
+    void passwordChangedEmailForOwnChange() {
+        SimpleMailMessage mail = service(true).passwordChangedEmail(tester, tester);
+        assertThat(mail.getTo()).containsExactly("tester@example.com");
+        assertThat(mail.getSubject()).isEqualTo("[BugTrack] Your password was changed");
+        assertThat(mail.getText())
+                .contains("You changed the password for your BugTrack account (tester@example.com).")
+                .contains("If you did not expect this, contact a BugTrack administrator straight away.")
+                .doesNotContain("old-password").doesNotContain("new-password");
+    }
+
+    @Test
+    void passwordChangedEmailForAdminReset() {
+        SimpleMailMessage mail = service(true).passwordChangedEmail(tester, admin);
+        assertThat(mail.getText())
+                .contains("An administrator set a new password for your BugTrack account (tester@example.com).")
+                .contains("Changed by: Ada Admin");
+    }
+
+    @Test
+    void disabledUsersGetNoPasswordEmail() {
+        tester.setEnabled(false);
+        when(users.findById(2L)).thenReturn(Optional.of(tester));
+        service(true).onPasswordChanged(new PasswordChangedEvent(2L, 1L));
+        verify(mailSenderProvider, never()).getIfAvailable();
+    }
+
+    @Test
     void statusChangeEventSendsTheEmail() {
         when(bugs.findById(8L)).thenReturn(Optional.of(bug));
         when(users.findById(3L)).thenReturn(Optional.of(developer));

@@ -686,13 +686,14 @@ async function usersView() {
     </form>
     <p class="muted" style="margin:8px 0 0;font-size:13px">Share the password with them privately, not by email or chat.</p></div>
   <div class="card table-wrap" style="padding:0"><table>
-    <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Active</th><th>Joined</th></tr></thead>
+    <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Active</th><th>Joined</th><th>Password</th></tr></thead>
     <tbody>${allUsers.map(u => {
       const self = u.id === me.id;
       return `<tr><td>${esc(u.name)}${self ? ' <span class="muted">(you)</span>' : ""}</td><td>${esc(u.email)}</td>
       <td><select data-role="${u.id}" ${self ? "disabled" : ""}>${opts(["ADMIN", "TESTER", "DEVELOPER"], u.role)}</select></td>
       <td><input type="checkbox" data-enabled="${u.id}" ${u.enabled ? "checked" : ""} ${self ? "disabled" : ""}></td>
-      <td class="muted">${fmt(u.createdAt)}</td></tr>`;
+      <td class="muted">${fmt(u.createdAt)}</td>
+      <td>${self ? '<span class="muted">use Account</span>' : `<button class="btn sm" data-reset-pw="${u.id}">Reset</button>`}</td></tr>`;
     }).join("")}</tbody></table></div>`;
 }
 
@@ -713,6 +714,8 @@ function bindUsers() {
       render();
     } catch (err) { toast(err.message); }
   };
+  document.querySelectorAll("[data-reset-pw]").forEach(b => b.onclick = () =>
+    openResetPassword(allUsers.find(u => u.id === Number(b.dataset.resetPw))));
   document.querySelectorAll("[data-role]").forEach(s => s.onchange = () => update(s.dataset.role, { role: s.value }));
   document.querySelectorAll("[data-enabled]").forEach(c => c.onchange = () => update(c.dataset.enabled, { enabled: c.checked }));
 }
@@ -951,6 +954,85 @@ $("newBugBtn").onclick = () => openBug(null);
 $("dlg").addEventListener("close", () => {
   if (/^#bug-\d+$/.test(location.hash)) history.replaceState(null, "", location.pathname + location.search);
 });
+/* ---------- Account and passwords ---------- */
+const PASSWORD_FIELDS = `minlength="8" maxlength="72" required`;
+
+function passwordsMatch(form) {
+  const ok = form.newPassword.value === form.confirmPassword.value;
+  form.confirmPassword.setCustomValidity(ok ? "" : "The two new passwords do not match");
+  return ok;
+}
+
+function openAccount() {
+  openDialog(`<form id="accountForm">
+    <div class="dlg-head"><h3 style="margin:0">Your account</h3><button type="button" class="btn sm" data-close>✕</button></div>
+    <div class="dlg-body">
+      <dl class="account-info"><dt>Name</dt><dd>${esc(me.name)}</dd><dt>Email</dt><dd>${esc(me.email)}</dd>
+        <dt>Role</dt><dd>${pill(me.role)}</dd></dl>
+      <h3>Change password</h3>
+      <div class="form">
+        <div class="field full"><label for="curPw">Current password</label>
+          <input id="curPw" name="currentPassword" type="password" required autocomplete="current-password"></div>
+        <div class="field"><label for="newPw">New password (8+ characters)</label>
+          <input id="newPw" name="newPassword" type="password" ${PASSWORD_FIELDS} autocomplete="new-password"></div>
+        <div class="field"><label for="confPw">Repeat new password</label>
+          <input id="confPw" name="confirmPassword" type="password" ${PASSWORD_FIELDS} autocomplete="new-password"></div>
+      </div>
+      <div class="error" id="accountError" style="margin-top:10px"></div>
+    </div>
+    <div class="dlg-foot"><button type="button" class="btn" data-close>Close</button>
+      <button class="btn primary">Change password</button></div></form>`);
+  const form = $("accountForm");
+  form.newPassword.oninput = form.confirmPassword.oninput = () => passwordsMatch(form); // re-check when either box changes
+  form.onsubmit = async e => {
+    e.preventDefault();
+    $("accountError").textContent = "";
+    if (!passwordsMatch(form)) { form.reportValidity(); return; }
+    try {
+      await api("POST", "/api/auth/password", {
+        currentPassword: form.currentPassword.value, newPassword: form.newPassword.value });
+      await loadCsrf(); // the session id changes after a password change
+      $("dlg").close();
+      toast("Password changed");
+    } catch (err) {
+      $("accountError").textContent = err.message;
+    }
+  };
+}
+
+function openResetPassword(user) {
+  openDialog(`<form id="resetForm">
+    <div class="dlg-head"><h3 style="margin:0">Reset password for ${esc(user.name)}</h3><button type="button" class="btn sm" data-close>✕</button></div>
+    <div class="dlg-body">
+      <p class="muted" style="margin-top:0">Set a new password for ${esc(user.email)}, then give it to them privately, not by email or chat.
+        They will get an email saying their password was changed.</p>
+      <div class="form">
+        <div class="field"><label for="rNewPw">New password (8+ characters)</label>
+          <input id="rNewPw" name="newPassword" type="password" ${PASSWORD_FIELDS} autocomplete="new-password"></div>
+        <div class="field"><label for="rConfPw">Repeat new password</label>
+          <input id="rConfPw" name="confirmPassword" type="password" ${PASSWORD_FIELDS} autocomplete="new-password"></div>
+      </div>
+      <div class="error" id="resetError" style="margin-top:10px"></div>
+    </div>
+    <div class="dlg-foot"><button type="button" class="btn" data-close>Cancel</button>
+      <button class="btn primary">Set password</button></div></form>`);
+  const form = $("resetForm");
+  form.newPassword.oninput = form.confirmPassword.oninput = () => passwordsMatch(form); // re-check when either box changes
+  form.onsubmit = async e => {
+    e.preventDefault();
+    $("resetError").textContent = "";
+    if (!passwordsMatch(form)) { form.reportValidity(); return; }
+    try {
+      await api("PUT", `/api/users/${user.id}/password`, { newPassword: form.newPassword.value });
+      $("dlg").close();
+      toast(`New password set for ${user.name}`);
+    } catch (err) {
+      $("resetError").textContent = err.message;
+    }
+  };
+}
+
+$("userBadge").onclick = openAccount;
 $("logoutBtn").onclick = async () => {
   try { await api("POST", "/api/auth/logout"); } catch { /* session may already be gone */ }
   me = null;

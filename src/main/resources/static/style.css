@@ -157,3 +157,8 @@ details.card table{margin-top:12px}
 td.num,th.num{text-align:right}
 .grid.charts{grid-template-columns:repeat(auto-fit,minmax(min(100%,460px),1fr))}
 a.btn{text-decoration:none;color:inherit;display:inline-flex;align-items:center}
+.btn.account-btn{display:inline-flex;align-items:center;gap:6px;border-color:transparent;background:none;color:var(--muted)}
+.btn.account-btn:hover{border-color:var(--border);background:var(--surface2);color:var(--text)}
+.account-info{display:grid;grid-template-columns:auto 1fr;gap:4px 16px;margin:0 0 18px}
+.account-info dt{color:var(--muted)}
+.account-info dd{margin:0}

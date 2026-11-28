@@ -50,6 +50,7 @@ The interface follows the operating system's light or dark setting by default. T
 ## Features
 
 - Registration and login with BCrypt-hashed passwords and session-based authentication
+- Users change their own password (click your name in the header); admins can reset a user's password, and the account owner is emailed whenever their password changes
 - Role-based access (Admin, Tester, Developer), enforced in the backend
 - Projects with members; testers see their projects' bugs, developers see bugs assigned to them
 - Bug reports with description, steps to reproduce, expected and actual results, priority and severity
@@ -214,8 +215,11 @@ Files are stored on disk in `ATTACHMENTS_DIR` under random names, while the data
 | POST | `/api/auth/login` | Log in (starts a session) |
 | POST | `/api/auth/logout` | Log out |
 | GET | `/api/auth/me` | Current user |
+| POST | `/api/auth/password` | Change your own password (`currentPassword`, `newPassword`) |
 | GET | `/api/users` | List users (admin) |
 | PATCH | `/api/users/{id}` | Change a user's role or active status (admin) |
+| POST | `/api/users` | Create a user with any role (admin) |
+| PUT | `/api/users/{id}/password` | Set a new password for a user (admin) |
 | GET | `/api/projects` | Projects visible to the current user |
 | POST | `/api/projects` | Create a project (admin) |
 | PUT | `/api/projects/{id}` | Edit a project (admin) |
@@ -325,6 +329,6 @@ bug-tracking-system/
 ## Known limitations and future improvements
 
 - No CORS configuration is needed because the backend serves the frontend from the same origin. If the frontend is ever hosted separately, allow only that origin.
-- Not yet implemented: sprints/releases, GitHub integration, and users changing their own password or resetting a forgotten one (an admin sets the initial password).
+- Not yet implemented: sprints/releases, GitHub integration, and a self-service "forgot password" email (an admin resets forgotten passwords instead).
 - There is no limit on repeated sign-in attempts; on a public site, consider adding rate limiting.
 - PDF reports use the standard Helvetica font, which covers Western European characters only; names in other scripts would not print correctly.

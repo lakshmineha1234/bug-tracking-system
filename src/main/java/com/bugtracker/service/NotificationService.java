@@ -113,6 +113,38 @@ public class NotificationService {
         }
     }
 
+    /** The account owner is told their password changed, so a change they did not make is noticed. */
+    @Async(AsyncConfig.MAIL_EXECUTOR)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
+    public void onPasswordChanged(PasswordChangedEvent event) {
+        User user = users.findById(event.userId()).orElse(null);
+        if (user == null || !user.isEnabled()) {
+            return;
+        }
+        User changedBy = event.changedById() == null ? null : users.findById(event.changedById()).orElse(null);
+        send(passwordChangedEmail(user, changedBy));
+    }
+
+    SimpleMailMessage passwordChangedEmail(User user, User changedBy) {
+        boolean byThemself = changedBy != null && changedBy.getId().equals(user.getId());
+        String how = byThemself
+                ? "You changed the password for your BugTrack account (" + user.getEmail() + ")."
+                : "An administrator set a new password for your BugTrack account (" + user.getEmail()
+                        + "). They will give it to you; please keep it private."
+                        + (changedBy != null ? "\nChanged by: " + changedBy.getName() : "");
+        String body = "Hi " + user.getName() + ",\n\n" + how + "\n\n"
+                + "If you did not expect this, contact a BugTrack administrator straight away.\n\n"
+                + "Sign in: " + baseUrl + "/\n\n"
+                + "-- \nYou received this email because the password for your account changed.\n";
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setFrom(from);
+        message.setTo(user.getEmail());
+        message.setSubject("[BugTrack] Your password was changed");
+        message.setText(body);
+        return message;
+    }
+
     SimpleMailMessage assignmentEmail(Bug bug, User assignee, User assignedBy) {
         return bugEmail(bug, assignee, bug.getStatus(),
                 "Bug #" + bug.getId() + " assigned to you",

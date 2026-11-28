@@ -1,5 +1,6 @@
 package com.bugtracker.controller;
 
+import com.bugtracker.dto.ChangePasswordRequest;
 import com.bugtracker.dto.LoginRequest;
 import com.bugtracker.dto.RegisterRequest;
 import com.bugtracker.dto.UserResponse;
@@ -78,6 +79,17 @@ public class AuthController {
         SecurityContextHolder.setContext(context);
         securityContextRepository.saveContext(context, request, response);
         return userService.me();
+    }
+
+    /**
+     * Changes the signed-in user's password. The session gets a new id afterwards, so a session id
+     * captured before the change no longer works.
+     */
+    @PostMapping("/password")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void changePassword(@Valid @RequestBody ChangePasswordRequest req, HttpServletRequest request) {
+        userService.changeOwnPassword(req);
+        request.changeSessionId();
     }
 
     @GetMapping("/me")

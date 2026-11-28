@@ -1,6 +1,8 @@
 package com.bugtracker.service;
 
+import com.bugtracker.dto.ChangePasswordRequest;
 import com.bugtracker.dto.RegisterRequest;
+import com.bugtracker.dto.ResetPasswordRequest;
 import com.bugtracker.dto.UpdateUserRequest;
 import com.bugtracker.dto.UserResponse;
 import com.bugtracker.entity.Role;
@@ -12,6 +14,7 @@ import com.bugtracker.exception.NotFoundException;
 import com.bugtracker.repository.UserRepository;
 import com.bugtracker.security.CurrentUserService;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Sort;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -27,18 +30,42 @@ public class UserService {
     private final UserRepository users;
     private final PasswordEncoder passwordEncoder;
     private final CurrentUserService currentUser;
+    private final ApplicationEventPublisher events;
     private final boolean registrationEnabled;
 
     public UserService(UserRepository users, PasswordEncoder passwordEncoder, CurrentUserService currentUser,
+                       ApplicationEventPublisher events,
                        @Value("${app.registration.enabled:true}") boolean registrationEnabled) {
         this.users = users;
         this.passwordEncoder = passwordEncoder;
         this.currentUser = currentUser;
+        this.events = events;
         this.registrationEnabled = registrationEnabled;
     }
 
     public boolean isRegistrationEnabled() {
         return registrationEnabled;
+    }
+
+    /** The signed-in user changes their own password, confirming the current one first. */
+    public void changeOwnPassword(ChangePasswordRequest req) {
+        User me = currentUser.get();
+        if (!passwordEncoder.matches(req.currentPassword(), me.getPassword())) {
+            throw new BadRequestException("Your current password is incorrect");
+        }
+        if (passwordEncoder.matches(req.newPassword(), me.getPassword())) {
+            throw new BadRequestException("The new password must be different from the current one");
+        }
+        me.setPassword(passwordEncoder.encode(req.newPassword()));
+        events.publishEvent(new PasswordChangedEvent(me.getId(), me.getId()));
+    }
+
+    /** An admin sets a new password for a user, for example one who forgot theirs. */
+    public void resetPassword(Long userId, ResetPasswordRequest req) {
+        User admin = requireAdmin();
+        User user = users.findById(userId).orElseThrow(() -> new NotFoundException("User " + userId + " not found"));
+        user.setPassword(passwordEncoder.encode(req.newPassword()));
+        events.publishEvent(new PasswordChangedEvent(user.getId(), admin.getId()));
     }
 
     /** Self-registration. Only TESTER and DEVELOPER may be chosen; admins change roles afterwards. */
