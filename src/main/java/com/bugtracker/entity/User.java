@@ -40,6 +40,10 @@ public class User {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
+    /** Increased when the password, role or enabled state changes; sessions started earlier stop working. */
+    @Column(name = "credentials_version", nullable = false)
+    private int credentialsVersion;
+
     @PrePersist
     void onCreate() {
         createdAt = Instant.now();
@@ -64,4 +68,9 @@ public class User {
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
 
     public Instant getCreatedAt() { return createdAt; }
+
+    public int getCredentialsVersion() { return credentialsVersion; }
+
+    /** Ends every existing session of this user (see CurrentUserService). */
+    public void invalidateSessions() { credentialsVersion++; }
 }

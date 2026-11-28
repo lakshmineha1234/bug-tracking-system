@@ -198,6 +198,7 @@ Suggested first steps: create a project, have a tester and a developer register,
 - Passwords are stored as BCrypt hashes; sessions use a secure, HttpOnly cookie in production, and every change needs a CSRF token.
 - **Sign-in attempt limiting.** After 10 failed sign-ins within 15 minutes, an account is locked for 15 minutes, from anywhere, and even the right password is refused until then. A network address with 30 failures within 15 minutes is blocked the same way for every account, which stops one machine from trying many accounts. A successful sign-in clears the account's count. Locked and unknown accounts get the same answer (HTTP 429 with a `Retry-After` header), so the limit does not reveal which emails have accounts. Changing a password is limited to 5 wrong current passwords per 15 minutes. All limits are configurable (see [Configuration](#configuration)).
 - Whenever a password changes, the account owner gets an email.
+- **Sessions end when credentials change.** Changing your password signs you out of every other browser or device (the one you changed it in stays signed in). An admin password reset, a role change or disabling an account signs that user out everywhere, and a disabled account's old sessions do not come back if it is enabled again. Each account has a credentials version, stored with every session and checked on each request.
 
 ## Reports
 

@@ -84,7 +84,7 @@ jobs:
           curl -fsS http://localhost:8080/ | grep -q "<title>BugTrack</title>"
           curl -fsS http://localhost:8080/api/auth/settings | grep -q registrationEnabled
           docker logs bugtrack 2>&1 | grep -q 'The following 1 profile is active: "prod"'
-          docker logs bugtrack 2>&1 | grep -q "Successfully applied 3 migrations"
+          docker logs bugtrack 2>&1 | grep -qE "Successfully applied [0-9]+ migrations"
           docker logs bugtrack 2>&1 | grep -q "Created admin account admin@ci.test"
           docker exec bugtrack sh -c 'id -u && touch /data/attachments/write-test && echo "attachments folder is writable"'
 

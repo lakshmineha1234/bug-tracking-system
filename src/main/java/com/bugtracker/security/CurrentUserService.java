@@ -10,7 +10,9 @@ import org.springframework.stereotype.Component;
 
 /**
  * Resolves the acting user from the authenticated session, never from request data.
- * The user is re-read from the database on every call, so role changes and disabling take effect immediately.
+ * The user is re-read from the database on every call, so role changes and disabling take effect immediately,
+ * and a session that signed in before the user's credentials version last changed (password change or reset,
+ * role change, disabling) is refused, which signs that user out everywhere else.
  */
 @Component
 public class CurrentUserService {
@@ -30,6 +32,9 @@ public class CurrentUserService {
                 .orElseThrow(() -> new UnauthorizedException("Account no longer exists"));
         if (!user.isEnabled()) {
             throw new ForbiddenException("This account has been disabled");
+        }
+        if (user.getCredentialsVersion() != details.getCredentialsVersion()) {
+            throw new UnauthorizedException("Your session has ended. Please sign in again.");
         }
         return user;
     }

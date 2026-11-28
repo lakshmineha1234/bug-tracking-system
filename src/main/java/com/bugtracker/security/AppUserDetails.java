@@ -17,6 +17,7 @@ public class AppUserDetails implements UserDetails {
     private final String password;
     private final Role role;
     private final boolean enabled;
+    private final int credentialsVersion;
 
     public AppUserDetails(User user) {
         this.id = user.getId();
@@ -24,10 +25,16 @@ public class AppUserDetails implements UserDetails {
         this.password = user.getPassword();
         this.role = user.getRole();
         this.enabled = user.isEnabled();
+        this.credentialsVersion = user.getCredentialsVersion();
     }
 
     public Long getId() {
         return id;
+    }
+
+    /** The user's credentials version when this session signed in; see CurrentUserService. */
+    public int getCredentialsVersion() {
+        return credentialsVersion;
     }
 
     public Role getRole() {

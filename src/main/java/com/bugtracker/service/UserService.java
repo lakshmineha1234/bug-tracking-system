@@ -50,8 +50,11 @@ public class UserService {
         return registrationEnabled;
     }
 
-    /** The signed-in user changes their own password, confirming the current one first. */
-    public void changeOwnPassword(ChangePasswordRequest req) {
+    /**
+     * The signed-in user changes their own password, confirming the current one first. All their sessions
+     * are ended; returns the updated user so the caller can keep the current session signed in.
+     */
+    public User changeOwnPassword(ChangePasswordRequest req) {
         User me = currentUser.get();
         loginLimiter.checkPasswordChange(me.getId());
         if (!passwordEncoder.matches(req.currentPassword(), me.getPassword())) {
@@ -63,14 +66,17 @@ public class UserService {
         }
         loginLimiter.passwordChangeSucceeded(me.getId());
         me.setPassword(passwordEncoder.encode(req.newPassword()));
+        me.invalidateSessions(); // signs the user out everywhere; the caller re-signs the current session
         events.publishEvent(new PasswordChangedEvent(me.getId(), me.getId()));
+        return me;
     }
 
-    /** An admin sets a new password for a user, for example one who forgot theirs. */
+    /** An admin sets a new password for a user, for example one who forgot theirs. Ends all their sessions. */
     public void resetPassword(Long userId, ResetPasswordRequest req) {
         User admin = requireAdmin();
         User user = users.findById(userId).orElseThrow(() -> new NotFoundException("User " + userId + " not found"));
         user.setPassword(passwordEncoder.encode(req.newPassword()));
+        user.invalidateSessions();
         events.publishEvent(new PasswordChangedEvent(user.getId(), admin.getId()));
     }
 
@@ -125,9 +131,15 @@ public class UserService {
             throw new BadRequestException("You cannot remove your own admin access");
         }
         if (req.role() != null) {
+            if (req.role() != user.getRole()) {
+                user.invalidateSessions(); // they sign in again with their new role
+            }
             user.setRole(req.role());
         }
         if (req.enabled() != null) {
+            if (user.isEnabled() && !req.enabled()) {
+                user.invalidateSessions(); // old sessions must not come back if the account is enabled again
+            }
             user.setEnabled(req.enabled());
         }
         return UserResponse.from(user);

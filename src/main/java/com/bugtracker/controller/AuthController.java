@@ -5,6 +5,7 @@ import com.bugtracker.dto.LoginRequest;
 import com.bugtracker.dto.RegisterRequest;
 import com.bugtracker.dto.UserResponse;
 import com.bugtracker.exception.UnauthorizedException;
+import com.bugtracker.security.AppUserDetails;
 import com.bugtracker.security.LoginAttemptLimiter;
 import com.bugtracker.service.UserService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -91,14 +92,19 @@ public class AuthController {
     }
 
     /**
-     * Changes the signed-in user's password. The session gets a new id afterwards, so a session id
-     * captured before the change no longer works.
+     * Changes the signed-in user's password and signs them out of every other session. This session stays
+     * signed in, under a new session id and with the new credentials version.
      */
     @PostMapping("/password")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void changePassword(@Valid @RequestBody ChangePasswordRequest req, HttpServletRequest request) {
-        userService.changeOwnPassword(req);
+    public void changePassword(@Valid @RequestBody ChangePasswordRequest req,
+                               HttpServletRequest request, HttpServletResponse response) {
+        AppUserDetails details = new AppUserDetails(userService.changeOwnPassword(req));
         request.changeSessionId();
+        SecurityContext context = SecurityContextHolder.createEmptyContext();
+        context.setAuthentication(UsernamePasswordAuthenticationToken.authenticated(details, null, details.getAuthorities()));
+        SecurityContextHolder.setContext(context);
+        securityContextRepository.saveContext(context, request, response);
     }
 
     @GetMapping("/me")
