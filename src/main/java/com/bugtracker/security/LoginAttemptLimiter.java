@@ -107,21 +107,32 @@ public class LoginAttemptLimiter {
         }
     }
 
+    /**
+     * Records a failure. The whole update runs inside the map's per-key atomic compute, so the cleanup can never
+     * remove the entry halfway through and lose the failure.
+     */
     private void failure(String key, int max) {
         Instant now = clock.instant();
-        Attempts a = attempts.computeIfAbsent(key, k -> new Attempts());
-        synchronized (a) {
-            if (a.lockedUntil != null && a.lockedUntil.isAfter(now)) {
-                return; // already locked
+        boolean[] lockedNow = {false};
+        attempts.compute(key, (k, existing) -> {
+            Attempts a = existing != null ? existing : new Attempts();
+            synchronized (a) {
+                if (a.lockedUntil != null && a.lockedUntil.isAfter(now)) {
+                    return a; // already locked
+                }
+                a.lockedUntil = null;
+                prune(a, now);
+                a.failures.addLast(now);
+                if (a.failures.size() >= max) {
+                    a.lockedUntil = now.plus(lockout);
+                    a.failures.clear();
+                    lockedNow[0] = true;
+                }
             }
-            a.lockedUntil = null;
-            prune(a, now);
-            a.failures.addLast(now);
-            if (a.failures.size() >= max) {
-                a.lockedUntil = now.plus(lockout);
-                a.failures.clear();
-                log.warn("Locked {} for {} minutes after {} failed attempts", describe(key), lockout.toMinutes(), max);
-            }
+            return a;
+        });
+        if (lockedNow[0]) {
+            log.warn("Locked {} for {} minutes after {} failed attempts", describe(key), lockout.toMinutes(), max);
         }
         cleanUpOccasionally(now);
     }
@@ -141,13 +152,17 @@ public class LoginAttemptLimiter {
             }
             callsSinceCleanup = 0;
         }
-        attempts.entrySet().removeIf(e -> {
-            Attempts a = e.getValue();
-            synchronized (a) {
-                prune(a, now);
-                return a.failures.isEmpty() && (a.lockedUntil == null || !a.lockedUntil.isAfter(now));
-            }
-        });
+        // computeIfPresent is atomic per key with compute() in failure(), so an entry is only removed when no
+        // failure is being recorded on it at the same moment.
+        for (String key : attempts.keySet()) {
+            attempts.computeIfPresent(key, (k, a) -> {
+                synchronized (a) {
+                    prune(a, now);
+                    boolean idle = a.failures.isEmpty() && (a.lockedUntil == null || !a.lockedUntil.isAfter(now));
+                    return idle ? null : a;
+                }
+            });
+        }
     }
 
     private static String accountKey(String email) {

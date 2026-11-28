@@ -4,7 +4,9 @@ import com.bugtracker.dto.ChangePasswordRequest;
 import com.bugtracker.dto.LoginRequest;
 import com.bugtracker.dto.RegisterRequest;
 import com.bugtracker.dto.UserResponse;
+import com.bugtracker.exception.GlobalExceptionHandler;
 import com.bugtracker.exception.UnauthorizedException;
+import org.springframework.boot.autoconfigure.web.servlet.MultipartProperties;
 import com.bugtracker.security.AppUserDetails;
 import com.bugtracker.security.LoginAttemptLimiter;
 import com.bugtracker.service.UserService;
@@ -38,14 +40,16 @@ public class AuthController {
     private final SecurityContextRepository securityContextRepository;
     private final UserService userService;
     private final LoginAttemptLimiter loginLimiter;
+    private final MultipartProperties multipart;
 
     public AuthController(AuthenticationManager authenticationManager,
                           SecurityContextRepository securityContextRepository, UserService userService,
-                          LoginAttemptLimiter loginLimiter) {
+                          LoginAttemptLimiter loginLimiter, MultipartProperties multipart) {
         this.authenticationManager = authenticationManager;
         this.securityContextRepository = securityContextRepository;
         this.userService = userService;
         this.loginLimiter = loginLimiter;
+        this.multipart = multipart;
     }
 
     /** The frontend calls this first and sends the token in the given header on POST/PUT/PATCH/DELETE requests. */
@@ -54,10 +58,12 @@ public class AuthController {
         return Map.of("headerName", token.getHeaderName(), "token", token.getToken());
     }
 
-    /** Public settings the sign-in screen needs, such as whether sign-up is open. */
+    /** Public settings the frontend needs: whether sign-up is open, and the attachment size limit. */
     @GetMapping("/settings")
     public Map<String, Object> settings() {
-        return Map.of("registrationEnabled", userService.isRegistrationEnabled());
+        return Map.of("registrationEnabled", userService.isRegistrationEnabled(),
+                "maxUploadBytes", multipart.getMaxFileSize().toBytes(),
+                "maxUploadLabel", GlobalExceptionHandler.describeSize(multipart.getMaxFileSize()));
     }
 
     @PostMapping("/register")

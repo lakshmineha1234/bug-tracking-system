@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.exc.InvalidFormatException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.web.servlet.MultipartProperties;
+import org.springframework.util.unit.DataSize;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -29,6 +31,12 @@ import java.util.Map;
 public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+    private final MultipartProperties multipart;
+
+    public GlobalExceptionHandler(MultipartProperties multipart) {
+        this.multipart = multipart;
+    }
 
     public record ApiError(Instant timestamp, int status, String error, String message, Map<String, String> fieldErrors) {
     }
@@ -81,7 +89,20 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<ApiError> handleTooLarge(MaxUploadSizeExceededException e) {
-        return build(HttpStatus.PAYLOAD_TOO_LARGE, "The file is too large. The maximum size is 10 MB.", null);
+        return build(HttpStatus.PAYLOAD_TOO_LARGE,
+                "The file is too large. The maximum size is " + describeSize(multipart.getMaxFileSize()) + ".", null);
+    }
+
+    /** "10 MB", "512 KB": the configured upload limit in words. */
+    public static String describeSize(DataSize size) {
+        long bytes = size.toBytes();
+        if (bytes >= 1024 * 1024 && bytes % (1024 * 1024) == 0) {
+            return bytes / (1024 * 1024) + " MB";
+        }
+        if (bytes >= 1024 && bytes % 1024 == 0) {
+            return bytes / 1024 + " KB";
+        }
+        return bytes + " bytes";
     }
 
     @ExceptionHandler(MissingServletRequestPartException.class)

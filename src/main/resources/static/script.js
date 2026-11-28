@@ -360,6 +360,9 @@ function bindList() {
   $("nextPage").onclick = () => { filters.page += 1; render(); };
 }
 
+// Spreadsheets run cells starting with = + - @ (or a tab/carriage return) as formulas; a leading ' keeps them as text.
+const csvSafe = text => /^[=+\-@\t\r]/.test(text) ? "'" + text : text;
+
 // Exports every bug matching the current filters, not just the page on screen.
 async function exportCSV() {
   const btn = $("fcsv");
@@ -380,7 +383,7 @@ async function exportCSV() {
   const cols = [["id", b => b.id], ["title", b => b.title], ["project", b => b.project.projectName], ["status", b => b.status],
     ["priority", b => b.priority], ["severity", b => b.severity], ["assignee", b => b.assignedTo ? b.assignedTo.name : ""],
     ["reporter", b => b.reportedBy.name], ["created", b => b.createdAt], ["updated", b => b.updatedAt]];
-  const q = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const q = v => `"${csvSafe(String(v ?? "")).replace(/"/g, '""')}"`;
   const csv = [cols.map(c => c[0]).join(","), ...all.map(b => cols.map(c => q(c[1](b))).join(","))].join("\n");
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
@@ -742,7 +745,8 @@ function timeline(statusChanges, assignmentChanges, withBug) {
 }
 
 /* ---------- Attachments ---------- */
-const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+// The server's attachment size limit, from /api/auth/settings at startup.
+let uploadLimit = { bytes: 10 * 1024 * 1024, label: "10 MB" };
 const ATTACHMENT_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".pdf", ".txt", ".log", ".csv", ".json", ".zip"];
 
 function formatSize(bytes) {
@@ -769,7 +773,7 @@ function attachmentsSection(attachments) {
     <div class="workflow" style="margin-top:8px">
       <input type="file" id="attFile" accept="${ATTACHMENT_EXTENSIONS.join(",")}" hidden>
       <button type="button" class="btn sm" id="attPick">Attach a file</button>
-      <span class="muted">Screenshots, PDF, logs, CSV, JSON or ZIP · up to 10 MB</span>
+      <span class="muted">Screenshots, PDF, logs, CSV, JSON or ZIP · up to ${esc(uploadLimit.label)}</span>
     </div></div>`;
 }
 
@@ -780,8 +784,8 @@ function bindAttachments(bugId, reopen) {
     const file = input.files[0];
     input.value = "";
     if (!file) return;
-    if (file.size > MAX_UPLOAD_BYTES) {
-      toast(`${file.name} is ${formatSize(file.size)}. The maximum is 10 MB.`);
+    if (file.size > uploadLimit.bytes) {
+      toast(`${file.name} is ${formatSize(file.size)}. The maximum is ${uploadLimit.label}.`);
       return;
     }
     const fd = new FormData();
@@ -1048,7 +1052,9 @@ $("logoutBtn").onclick = async () => {
     return;
   }
   try {
-    registrationEnabled = (await api("GET", "/api/auth/settings")).registrationEnabled;
+    const settings = await api("GET", "/api/auth/settings");
+    registrationEnabled = settings.registrationEnabled;
+    if (settings.maxUploadBytes) uploadLimit = { bytes: settings.maxUploadBytes, label: settings.maxUploadLabel };
   } catch { /* keep the default */ }
   try {
     me = await api("GET", "/api/auth/me");

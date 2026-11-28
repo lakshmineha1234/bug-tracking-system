@@ -29,9 +29,11 @@ import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -305,7 +307,7 @@ class BugApiIntegrationTest {
                 .andExpect(status().isCreated());
 
         assertThat(applicationEvents.stream(BugStatusChangedEvent.class))
-                .containsExactly(new BugStatusChangedEvent(bugId, BugStatus.OPEN, BugStatus.IN_PROGRESS, developer.getId()));
+                .containsExactly(new BugStatusChangedEvent(bugId, BugStatus.OPEN, BugStatus.IN_PROGRESS, developer.getId(), developer.getId()));
         assertThat(applicationEvents.stream(CommentAddedEvent.class)).hasSize(1);
     }
 
@@ -359,6 +361,48 @@ class BugApiIntegrationTest {
         mvc.perform(get("/api/reports").param("projectId", project.getId().toString()).with(as(otherDeveloper)))
                 .andExpect(status().isForbidden()); // not a member of the project
         mvc.perform(get("/api/reports")).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void removingAMemberUnassignsTheirBugsAndEndsTheirAccess() throws Exception {
+        long bugId = createBug("Login loop", "HIGH", "MAJOR");
+        assign(bugId, developer.getId());
+        mvc.perform(get("/api/bugs/" + bugId).with(as(developer))).andExpect(status().isOk());
+
+        mvc.perform(delete("/api/projects/" + project.getId() + "/members/" + developer.getId()).with(as(admin)).with(csrf()))
+                .andExpect(status().isNoContent());
+
+        mvc.perform(get("/api/bugs/" + bugId).with(as(developer))).andExpect(status().isForbidden());
+        mvc.perform(get("/api/bugs/" + bugId).with(as(admin)))
+                .andExpect(jsonPath("$.assignedTo").value(nullValue()));
+        mvc.perform(get("/api/bugs/" + bugId + "/assignments").with(as(admin)))
+                .andExpect(jsonPath("$", hasSize(2)))
+                .andExpect(jsonPath("$[1].oldAssignee.name").value("Dev One"))
+                .andExpect(jsonPath("$[1].newAssignee").value(nullValue()))
+                .andExpect(jsonPath("$[1].changedBy.name").value("Admin"));
+    }
+
+    @Test
+    void searchTreatsPercentAndUnderscoreLiterally() throws Exception {
+        createBug("Checkout shows 50% discount twice", "LOW", "MINOR");
+        createBug("500 error on save", "LOW", "MINOR");
+        createBug("login_page crashes", "LOW", "MINOR");
+        createBug("login-page slow", "LOW", "MINOR");
+
+        mvc.perform(get("/api/bugs").param("q", "50%").with(as(tester)))
+                .andExpect(jsonPath("$.content", hasSize(1)))
+                .andExpect(jsonPath("$.content[0].title").value("Checkout shows 50% discount twice"));
+        mvc.perform(get("/api/bugs").param("q", "login_page").with(as(tester)))
+                .andExpect(jsonPath("$.content", hasSize(1)))
+                .andExpect(jsonPath("$.content[0].title").value("login_page crashes"));
+    }
+
+    @Test
+    void adminCannotResetTheirOwnPasswordWithoutTheCurrentOne() throws Exception {
+        mvc.perform(put("/api/users/" + admin.getId() + "/password").with(as(admin)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"newPassword\":\"takeover-password\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(containsString("Your account")));
     }
 
     @Test

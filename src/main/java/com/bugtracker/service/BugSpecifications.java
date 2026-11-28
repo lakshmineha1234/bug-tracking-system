@@ -89,6 +89,16 @@ public final class BugSpecifications {
         return rank.otherwise(order.size());
     }
 
+    /**
+     * Escape character for LIKE patterns, so % and _ typed in a search match themselves. Not a backslash,
+     * because MySQL treats backslashes in SQL string literals as escapes of their own.
+     */
+    static final char LIKE_ESCAPE = '!';
+
+    static String escapeLike(String text) {
+        return text.replace("!", "!!").replace("%", "!%").replace("_", "!_");
+    }
+
     public static Specification<Bug> matches(BugFilter f) {
         return (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
@@ -111,10 +121,10 @@ public final class BugSpecifications {
             }
             if (f.q() != null && !f.q().isBlank()) {
                 String keyword = f.q().trim().toLowerCase(Locale.ROOT);
-                String like = "%" + keyword + "%";
+                String like = "%" + escapeLike(keyword) + "%";
                 List<Predicate> any = new ArrayList<>();
-                any.add(cb.like(cb.lower(root.get("title")), like));
-                any.add(cb.like(cb.lower(root.get("description")), like));
+                any.add(cb.like(cb.lower(root.get("title")), like, LIKE_ESCAPE));
+                any.add(cb.like(cb.lower(root.get("description")), like, LIKE_ESCAPE));
                 String digits = keyword.startsWith("#") ? keyword.substring(1) : keyword;
                 if (digits.matches("\\d{1,18}")) {
                     any.add(cb.equal(root.get("id"), Long.parseLong(digits)));

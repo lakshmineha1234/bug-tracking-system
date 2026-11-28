@@ -21,4 +21,6 @@ public interface BugRepository extends JpaRepository<Bug, Long>, JpaSpecificatio
     @Override
     @EntityGraph(attributePaths = {"project", "reportedBy", "assignedTo"})
     Page<Bug> findAll(Specification<Bug> spec, Pageable pageable);
+
+    List<Bug> findByProjectIdAndAssignedToId(Long projectId, Long assigneeId);
 }

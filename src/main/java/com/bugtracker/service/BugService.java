@@ -160,7 +160,7 @@ public class BugService {
         bug.setStatus(to);
         bug.touch();
         history.save(new BugHistory(bug, me, from, to));
-        events.publishEvent(new BugStatusChangedEvent(bug.getId(), from, to, me.getId()));
+        events.publishEvent(new BugStatusChangedEvent(bug.getId(), from, to, me.getId(), assigneeId(bug)));
         return toResponse(bug, me);
     }
 
@@ -210,7 +210,7 @@ public class BugService {
         User me = currentUser.get();
         Bug bug = findVisible(bugId, me);
         Comment comment = comments.save(new Comment(bug, me, req.commentText().trim()));
-        events.publishEvent(new CommentAddedEvent(comment.getId()));
+        events.publishEvent(new CommentAddedEvent(comment.getId(), assigneeId(bug)));
         return CommentResponse.from(comment);
     }
 
@@ -224,6 +224,10 @@ public class BugService {
     public List<AssignmentHistoryResponse> assignmentHistory(Long bugId) {
         findVisible(bugId, currentUser.get());
         return assignmentHistory.findByBugIdOrderByIdAsc(bugId).stream().map(AssignmentHistoryResponse::from).toList();
+    }
+
+    private static Long assigneeId(Bug bug) {
+        return bug.getAssignedTo() == null ? null : bug.getAssignedTo().getId();
     }
 
     /** 404 if the bug does not exist, 403 if it exists but the user may not see it. */

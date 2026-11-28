@@ -144,7 +144,7 @@ class NotificationServiceTest {
 
     @Test
     void fixedBugAsksTheReporterToRetest() {
-        List<SimpleMailMessage> mails = service(true).statusEmails(bug, BugStatus.IN_PROGRESS, BugStatus.FIXED, developer);
+        List<SimpleMailMessage> mails = service(true).statusEmails(bug, BugStatus.IN_PROGRESS, BugStatus.FIXED, developer, bug.getAssignedTo());
 
         assertThat(mails).hasSize(1);
         assertThat(mails.get(0).getTo()).containsExactly("tester@example.com");
@@ -160,51 +160,67 @@ class NotificationServiceTest {
     @Test
     void returnedClosedAndReopenedBugsNotifyTheDeveloper() {
         NotificationService service = service(true);
-        assertThat(service.statusEmails(bug, BugStatus.FIXED, BugStatus.IN_PROGRESS, tester))
+        assertThat(service.statusEmails(bug, BugStatus.FIXED, BugStatus.IN_PROGRESS, tester, bug.getAssignedTo()))
                 .singleElement().satisfies(m -> {
                     assertThat(m.getTo()).containsExactly("dev@example.com");
                     assertThat(m.getSubject()).startsWith("[BugTrack] Bug #8 was returned to you");
                 });
-        assertThat(service.statusEmails(bug, BugStatus.FIXED, BugStatus.CLOSED, tester))
+        assertThat(service.statusEmails(bug, BugStatus.FIXED, BugStatus.CLOSED, tester, bug.getAssignedTo()))
                 .singleElement().satisfies(m -> assertThat(m.getSubject()).startsWith("[BugTrack] Bug #8 was verified and closed"));
-        assertThat(service.statusEmails(bug, BugStatus.CLOSED, BugStatus.OPEN, tester))
+        assertThat(service.statusEmails(bug, BugStatus.CLOSED, BugStatus.OPEN, tester, bug.getAssignedTo()))
                 .singleElement().satisfies(m -> assertThat(m.getSubject()).startsWith("[BugTrack] Bug #8 was reopened"));
     }
 
     @Test
     void statusEmailShowsTheStatusFromItsOwnChange() {
         bug.setStatus(BugStatus.CLOSED); // the bug has moved on by the time the queued email is written
-        assertThat(service(true).statusEmails(bug, BugStatus.FIXED, BugStatus.IN_PROGRESS, tester))
+        assertThat(service(true).statusEmails(bug, BugStatus.FIXED, BugStatus.IN_PROGRESS, tester, bug.getAssignedTo()))
                 .singleElement()
                 .satisfies(m -> assertThat(m.getText()).contains("Status:      In Progress").doesNotContain("Closed"));
     }
 
     @Test
+    void statusEmailGoesOnlyToTheDeveloperAssignedAtTheTime() {
+        User newDeveloper = user(4L, "New Dev", "new@example.com", Role.DEVELOPER);
+        bug.getProject().addMember(newDeveloper);
+
+        // Returned while Dev was assigned, then reassigned before the email went out: the new developer is not
+        // told about a change that wasn't theirs, and Dev can no longer see the bug, so no details leak to them.
+        bug.setAssignedTo(newDeveloper);
+        assertThat(service(true).statusEmails(bug, BugStatus.FIXED, BugStatus.IN_PROGRESS, tester, developer)).isEmpty();
+
+        // Still assigned to Dev when the email is written: Dev gets it.
+        bug.setAssignedTo(developer);
+        assertThat(service(true).statusEmails(bug, BugStatus.FIXED, BugStatus.IN_PROGRESS, tester, developer))
+                .singleElement().satisfies(m -> assertThat(m.getTo()).containsExactly("dev@example.com"));
+    }
+
+    @Test
     void startingWorkSendsNothing() {
-        assertThat(service(true).statusEmails(bug, BugStatus.OPEN, BugStatus.IN_PROGRESS, developer)).isEmpty();
+        assertThat(service(true).statusEmails(bug, BugStatus.OPEN, BugStatus.IN_PROGRESS, developer, bug.getAssignedTo())).isEmpty();
     }
 
     @Test
     void nobodyIsEmailedAboutTheirOwnAction() {
         bug.setReportedBy(admin);
         // The admin marks fixed a bug they reported themselves: no email to the admin.
-        assertThat(service(true).statusEmails(bug, BugStatus.IN_PROGRESS, BugStatus.FIXED, admin)).isEmpty();
+        assertThat(service(true).statusEmails(bug, BugStatus.IN_PROGRESS, BugStatus.FIXED, admin, bug.getAssignedTo())).isEmpty();
     }
 
     @Test
     void disabledUsersAndUsersWhoCannotSeeTheBugAreSkipped() {
         tester.setEnabled(false);
-        assertThat(service(true).statusEmails(bug, BugStatus.IN_PROGRESS, BugStatus.FIXED, developer)).isEmpty();
+        assertThat(service(true).statusEmails(bug, BugStatus.IN_PROGRESS, BugStatus.FIXED, developer, bug.getAssignedTo())).isEmpty();
 
         tester.setEnabled(true);
         bug.getProject().removeMember(tester.getId()); // the tester left the project
-        assertThat(service(true).statusEmails(bug, BugStatus.IN_PROGRESS, BugStatus.FIXED, developer)).isEmpty();
+        assertThat(service(true).statusEmails(bug, BugStatus.IN_PROGRESS, BugStatus.FIXED, developer, bug.getAssignedTo())).isEmpty();
     }
 
     @Test
     void commentsGoToReporterAndAssigneeButNotTheAuthor() {
         Comment comment = new Comment(bug, developer, "Found the cause.\nFix is on the way.");
-        List<SimpleMailMessage> mails = service(true).commentEmails(comment);
+        List<SimpleMailMessage> mails = service(true).commentEmails(comment, bug.getAssignedTo());
 
         assertThat(mails).hasSize(1);
         SimpleMailMessage mail = mails.get(0);
@@ -215,7 +231,7 @@ class NotificationServiceTest {
                 .contains("  Found the cause.\n  Fix is on the way.");
 
         Comment byAdmin = new Comment(bug, admin, "Any update?");
-        assertThat(service(true).commentEmails(byAdmin))
+        assertThat(service(true).commentEmails(byAdmin, bug.getAssignedTo()))
                 .extracting(m -> m.getTo()[0])
                 .containsExactlyInAnyOrder("tester@example.com", "dev@example.com");
     }
@@ -224,7 +240,7 @@ class NotificationServiceTest {
     void commentByReporterWhoIsAlsoAssigneeEmailsNobody() {
         bug.setReportedBy(developer); // same person reported and is assigned
         Comment comment = new Comment(bug, developer, "Note to self");
-        assertThat(service(true).commentEmails(comment)).isEmpty();
+        assertThat(service(true).commentEmails(comment, bug.getAssignedTo())).isEmpty();
     }
 
     @Test
@@ -260,7 +276,7 @@ class NotificationServiceTest {
         when(users.findById(3L)).thenReturn(Optional.of(developer));
         when(mailSenderProvider.getIfAvailable()).thenReturn(mailSender);
 
-        service(true).onStatusChanged(new BugStatusChangedEvent(8L, BugStatus.IN_PROGRESS, BugStatus.FIXED, 3L));
+        service(true).onStatusChanged(new BugStatusChangedEvent(8L, BugStatus.IN_PROGRESS, BugStatus.FIXED, 3L, 3L));
 
         ArgumentCaptor<SimpleMailMessage> sent = ArgumentCaptor.forClass(SimpleMailMessage.class);
         verify(mailSender).send(sent.capture());

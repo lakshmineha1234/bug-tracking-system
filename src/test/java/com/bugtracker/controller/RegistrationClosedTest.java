@@ -22,7 +22,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /** Invitation-only mode (public sign-up switched off), admin-created accounts, and the health check. */
-@SpringBootTest(properties = "app.registration.enabled=false")
+@SpringBootTest(properties = {"app.registration.enabled=false", "spring.servlet.multipart.max-file-size=10MB"})
 @AutoConfigureMockMvc
 @Transactional
 class RegistrationClosedTest {
@@ -45,7 +45,9 @@ class RegistrationClosedTest {
     void signUpIsClosed() throws Exception {
         mvc.perform(get("/api/auth/settings"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.registrationEnabled").value(false));
+                .andExpect(jsonPath("$.registrationEnabled").value(false))
+                .andExpect(jsonPath("$.maxUploadBytes").value(10 * 1024 * 1024))
+                .andExpect(jsonPath("$.maxUploadLabel").value("10 MB"));
         mvc.perform(post("/api/auth/register").with(csrf()).contentType(MediaType.APPLICATION_JSON)
                         .content(json("Eve", "eve@closed.test", "password123", "TESTER")))
                 .andExpect(status().isForbidden())

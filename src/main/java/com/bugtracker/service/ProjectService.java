@@ -3,12 +3,16 @@ package com.bugtracker.service;
 import com.bugtracker.dto.ProjectRequest;
 import com.bugtracker.dto.ProjectResponse;
 import com.bugtracker.dto.UserResponse;
+import com.bugtracker.entity.AssignmentHistory;
+import com.bugtracker.entity.Bug;
 import com.bugtracker.entity.Project;
 import com.bugtracker.entity.Role;
 import com.bugtracker.entity.User;
 import com.bugtracker.exception.ConflictException;
 import com.bugtracker.exception.ForbiddenException;
 import com.bugtracker.exception.NotFoundException;
+import com.bugtracker.repository.AssignmentHistoryRepository;
+import com.bugtracker.repository.BugRepository;
 import com.bugtracker.repository.ProjectRepository;
 import com.bugtracker.repository.UserRepository;
 import com.bugtracker.security.CurrentUserService;
@@ -24,11 +28,16 @@ public class ProjectService {
 
     private final ProjectRepository projects;
     private final UserRepository users;
+    private final BugRepository bugs;
+    private final AssignmentHistoryRepository assignmentHistory;
     private final CurrentUserService currentUser;
 
-    public ProjectService(ProjectRepository projects, UserRepository users, CurrentUserService currentUser) {
+    public ProjectService(ProjectRepository projects, UserRepository users, BugRepository bugs,
+                          AssignmentHistoryRepository assignmentHistory, CurrentUserService currentUser) {
         this.projects = projects;
         this.users = users;
+        this.bugs = bugs;
+        this.assignmentHistory = assignmentHistory;
         this.currentUser = currentUser;
     }
 
@@ -88,9 +97,20 @@ public class ProjectService {
         project.addMember(user);
     }
 
+    /**
+     * Removes a member. Bugs in this project that are assigned to them become unassigned (and the change is
+     * recorded), because developers see bugs through their assignment and must lose access with the membership.
+     */
     public void removeMember(Long id, Long userId) {
-        requireAdmin();
-        find(id).removeMember(userId);
+        User admin = requireAdmin();
+        Project project = find(id);
+        project.removeMember(userId);
+        for (Bug bug : bugs.findByProjectIdAndAssignedToId(id, userId)) {
+            User previous = bug.getAssignedTo();
+            bug.setAssignedTo(null);
+            bug.touch();
+            assignmentHistory.save(new AssignmentHistory(bug, admin, previous, null));
+        }
     }
 
     private Project find(Long id) {

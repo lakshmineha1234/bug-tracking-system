@@ -93,8 +93,8 @@ public class NotificationService {
         if (bug == null) {
             return;
         }
-        User actor = event.changedById() == null ? null : users.findById(event.changedById()).orElse(null);
-        for (SimpleMailMessage message : statusEmails(bug, event.from(), event.to(), actor)) {
+        User actor = findUser(event.changedById());
+        for (SimpleMailMessage message : statusEmails(bug, event.from(), event.to(), actor, findUser(event.assigneeId()))) {
             send(message);
         }
     }
@@ -108,7 +108,7 @@ public class NotificationService {
         if (comment == null) {
             return;
         }
-        for (SimpleMailMessage message : commentEmails(comment)) {
+        for (SimpleMailMessage message : commentEmails(comment, findUser(event.assigneeId()))) {
             send(message);
         }
     }
@@ -152,7 +152,8 @@ public class NotificationService {
                 true, "a bug in BugTrack was assigned to you");
     }
 
-    List<SimpleMailMessage> statusEmails(Bug bug, BugStatus from, BugStatus to, User actor) {
+    /** assignee is the developer assigned when the status changed, not necessarily the one assigned now. */
+    List<SimpleMailMessage> statusEmails(Bug bug, BugStatus from, BugStatus to, User actor, User assignee) {
         String who = name(actor, "Someone");
         String id = "#" + bug.getId();
         String reasonAssignee = "you are assigned to this bug";
@@ -164,19 +165,19 @@ public class NotificationService {
                     false, "you reported this bug")).toList();
         }
         if (from == BugStatus.FIXED && to == BugStatus.IN_PROGRESS) {
-            return recipients(bug, actor, bug.getAssignedTo()).stream().map(r -> bugEmail(bug, r, to,
+            return recipients(bug, actor, assignee).stream().map(r -> bugEmail(bug, r, to,
                     "Bug " + id + " was returned to you",
                     who + " retested bug " + id + " and returned it to you: the problem is still there.",
                     false, reasonAssignee)).toList();
         }
         if (to == BugStatus.CLOSED) {
-            return recipients(bug, actor, bug.getAssignedTo()).stream().map(r -> bugEmail(bug, r, to,
+            return recipients(bug, actor, assignee).stream().map(r -> bugEmail(bug, r, to,
                     "Bug " + id + " was verified and closed",
                     who + " verified the fix and closed bug " + id + ".",
                     false, reasonAssignee)).toList();
         }
         if (from == BugStatus.CLOSED && to == BugStatus.OPEN) {
-            return recipients(bug, actor, bug.getAssignedTo()).stream().map(r -> bugEmail(bug, r, to,
+            return recipients(bug, actor, assignee).stream().map(r -> bugEmail(bug, r, to,
                     "Bug " + id + " was reopened",
                     who + " reopened bug " + id + ".",
                     false, reasonAssignee)).toList();
@@ -184,11 +185,12 @@ public class NotificationService {
         return List.of();
     }
 
-    List<SimpleMailMessage> commentEmails(Comment comment) {
+    /** assignee is the developer assigned when the comment was posted. */
+    List<SimpleMailMessage> commentEmails(Comment comment, User assignee) {
         Bug bug = comment.getBug();
         User author = comment.getUser();
         String quoted = "  " + comment.getCommentText().strip().replace("\n", "\n  ");
-        return recipients(bug, author, bug.getReportedBy(), bug.getAssignedTo()).stream().map(r -> bugEmail(bug, r, bug.getStatus(),
+        return recipients(bug, author, bug.getReportedBy(), assignee).stream().map(r -> bugEmail(bug, r, bug.getStatus(),
                 "New comment on bug #" + bug.getId(),
                 author.getName() + " commented on bug #" + bug.getId() + ":\n\n" + quoted,
                 false, "you reported or are assigned to this bug")).toList();
@@ -269,6 +271,10 @@ public class NotificationService {
                 }
             }
         }
+    }
+
+    private User findUser(Long id) {
+        return id == null ? null : users.findById(id).orElse(null);
     }
 
     private static String name(User user, String fallback) {

@@ -39,24 +39,29 @@ public class AdminInitializer implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) {
-        if (users.existsByRole(Role.ADMIN)) {
+        // Only an admin who can actually sign in counts: if every admin is disabled, the configured one is restored.
+        if (users.existsByRoleAndEnabledTrue(Role.ADMIN)) {
             return;
         }
         if (email.isBlank() || password.isBlank()) {
-            log.warn("No admin account exists. Set BUGTRACK_ADMIN_EMAIL and BUGTRACK_ADMIN_PASSWORD and restart to create one.");
+            log.warn("No enabled admin account exists. Set BUGTRACK_ADMIN_EMAIL and BUGTRACK_ADMIN_PASSWORD and restart to create one.");
             return;
         }
         if (password.length() < 8) {
             log.warn("BUGTRACK_ADMIN_PASSWORD must be at least 8 characters. Admin account was not created.");
             return;
         }
-        User admin = users.findByEmailIgnoreCase(email.trim()).orElseGet(User::new);
+        User existing = users.findByEmailIgnoreCase(email.trim()).orElse(null);
+        User admin = existing != null ? existing : new User();
         admin.setName(admin.getName() == null ? name : admin.getName());
         admin.setEmail(email.trim().toLowerCase());
         admin.setPassword(passwordEncoder.encode(password));
         admin.setRole(Role.ADMIN);
         admin.setEnabled(true);
+        if (existing != null) {
+            admin.invalidateSessions(); // the password was replaced, so any old sessions end
+        }
         users.save(admin);
-        log.info("Created admin account {}", admin.getEmail());
+        log.info("{} admin account {}", existing == null ? "Created" : "Restored", admin.getEmail());
     }
 }

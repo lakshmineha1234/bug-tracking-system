@@ -16,6 +16,7 @@ import com.bugtracker.security.CurrentUserService;
 import com.bugtracker.security.LoginAttemptLimiter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Sort;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -74,6 +75,10 @@ public class UserService {
     /** An admin sets a new password for a user, for example one who forgot theirs. Ends all their sessions. */
     public void resetPassword(Long userId, ResetPasswordRequest req) {
         User admin = requireAdmin();
+        if (admin.getId().equals(userId)) {
+            // Changing your own password must go through the current-password check and its attempt limit.
+            throw new BadRequestException("To change your own password, use Your account (click your name) instead");
+        }
         User user = users.findById(userId).orElseThrow(() -> new NotFoundException("User " + userId + " not found"));
         user.setPassword(passwordEncoder.encode(req.newPassword()));
         user.invalidateSessions();
@@ -108,7 +113,12 @@ public class UserService {
         user.setPassword(passwordEncoder.encode(req.password()));
         user.setRole(req.role());
         user.setEnabled(true);
-        return users.save(user);
+        try {
+            return users.saveAndFlush(user);
+        } catch (DataIntegrityViolationException e) {
+            // Two sign-ups with the same email at the same moment: the unique constraint catches the second one.
+            throw new ConflictException("An account with this email already exists");
+        }
     }
 
     @Transactional(readOnly = true)
